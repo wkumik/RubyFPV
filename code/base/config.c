@@ -50,6 +50,32 @@ void getSystemVersionString(char* p, u32 swversion)
    sprintf(p, "%u.%u", major, minor);
 }
 
+int hardware_file_check_and_fix_access_c(char* szFullFileName)
+{
+   if ( (NULL == szFullFileName) || (0 == szFullFileName[0]) )
+      return 0;
+   if ( access(szFullFileName, F_OK) == -1 )
+      return 0;
+
+   int iUpdate = 0;
+   if ( access(szFullFileName, R_OK) == -1 )
+      iUpdate = 1;
+   if ( access(szFullFileName, X_OK) == -1 )
+      iUpdate = 1;
+
+   if ( iUpdate )
+   {
+      char szComm[MAX_FILE_PATH_SIZE];
+      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "chmod 777 %s", szFullFileName);
+      hw_execute_bash_command(szComm, NULL);
+   }
+
+   if ( access(szFullFileName, R_OK) != -1 )
+   if ( access(szFullFileName, X_OK) != -1 )
+      return 1;
+   return 0;
+}
+
 int config_file_get_value(const char* szPropName)
 {
    char szComm[MAX_FILE_PATH_SIZE];
@@ -147,9 +173,9 @@ void config_file_force_value(const char* szFile, const char* szPropName, int val
    hw_execute_bash_command(szComm, NULL);
 }
 
-
 void save_simple_config_fileU(const char* fileName, u32 value)
 {
+   hardware_file_check_and_fix_access_c(fileName);
    FILE* fd = fopen(fileName, "w");
    if ( NULL == fd )
    {
@@ -159,6 +185,7 @@ void save_simple_config_fileU(const char* fileName, u32 value)
    fprintf(fd, "%u\n", value);
    fclose(fd);
    log_line("Saved value %u to file: %s", value, fileName);
+   hardware_file_check_and_fix_access_c(fileName);
 }
 
 u32 load_simple_config_fileU(const char* fileName, u32 defaultValue)
@@ -185,6 +212,7 @@ u32 load_simple_config_fileU(const char* fileName, u32 defaultValue)
 
 void save_simple_config_fileI(const char* fileName, int value)
 {
+   hardware_file_check_and_fix_access_c(fileName);
    FILE* fd = fopen(fileName, "w");
    if ( NULL == fd )
    {
@@ -193,6 +221,7 @@ void save_simple_config_fileI(const char* fileName, int value)
    }
    fprintf(fd, "%d\n", value);
    fclose(fd);
+   hardware_file_check_and_fix_access_c(fileName);
 }
 
 int load_simple_config_fileI(const char* fileName, int defaultValue)

@@ -140,7 +140,7 @@ void _hardware_detectSystemType()
    
    char szBuff[256];
    char szFile[MAX_FILE_PATH_SIZE];
-   strcpy(szFile, FOLDER_RUBY_TEMP);
+   strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_SYSTEM_TYPE);
    FILE* fd = fopen(szFile, "r");
    if ( NULL != fd )
@@ -155,6 +155,9 @@ void _hardware_detectSystemType()
       log_softerror_and_alarm("[Hardware] Failed to parse system type config file [%s]", szFile); 
       fclose(fd);
    }
+   else
+      log_line("[Hardware] Can't open any previous hardware detection type file.");
+
    log_line("[Hardware] Do full detection of board and system type...");
    hw_execute_bash_command_raw("cat /proc/device-tree/model", szBuff);
    log_line("[Hardware] Board description string: %s", szBuff);
@@ -186,6 +189,7 @@ void _hardware_detectSystemType()
       iDoAditionalChecks = 0;
    }
    #endif
+
    #endif
    
    #if defined (HW_PLATFORM_RASPBERRY) || defined (HW_PLATFORM_RADXA)
@@ -270,40 +274,7 @@ void _hardware_detectSystemType()
    else
       log_line("[Hardware] Detected system as controller.");
 
-   strcpy(szFile, FOLDER_RUBY_TEMP);
-   strcat(szFile, FILE_CONFIG_SYSTEM_TYPE);
-   fd = fopen(szFile, "w");
-   if ( NULL != fd )
-   {
-      fprintf(fd, "%d %u\n", s_iHardwareSystemIsVehicle, s_uHardwareBoardType);
-      fclose(fd);
-   }
-
-   strcpy(szFile, FOLDER_RUBY_TEMP);
-   strcat(szFile, FILE_CONFIG_BOARD_TYPE);
-   fd = fopen(szFile, "w");
-   if ( NULL == fd )
-      log_softerror_and_alarm("[Hardware] Failed to save board configuration to file: %s", szFile);
-   else
-   {
-      fprintf(fd, "%u %s\n", s_uHardwareBoardType, szBuff);
-      fclose(fd);
-   }
-
-
-   #if defined (HW_PLATFORM_RASPBERRY)
-   fd = fopen("/boot/ruby_board.txt", "w");
-   if ( NULL != fd )
-   {
-      fprintf(fd, "%u\n", s_uHardwareBoardType);
-      fclose(fd);
-   }
-   hw_execute_bash_command("cat /proc/device-tree/model > /boot/ruby_board_desc.txt", NULL);
-   #endif
-
-   #if defined (HW_PLATFORM_OPENIPC_CAMERA)
-   hw_execute_bash_command("cat /proc/device-tree/model > /root/ruby/config/ruby_board_desc.txt", NULL);
-   #endif
+   hardware_writeBoardAndSystemType();
 
    log_line("[Hardware] Detected system Type: %s", s_iHardwareSystemIsVehicle?"[vehicle]":"[controller]");
 
@@ -822,6 +793,55 @@ void hardware_detectBoardAndSystemType()
       log_line("[Hardware] Detected system as controller.");
 }
 
+void hardware_writeBoardAndSystemType()
+{
+   char szFile[MAX_FILE_PATH_SIZE];
+   strcpy(szFile, FOLDER_CONFIG);
+   strcat(szFile, FILE_CONFIG_SYSTEM_TYPE);
+   hardware_file_check_and_fix_access(szFile);
+   log_line("[Hardware] Write system type (%d) and board type (%d) to file: %s", s_iHardwareSystemIsVehicle, s_uHardwareBoardType, szFile);
+   FILE* fd = fopen(szFile, "w");
+   if ( NULL != fd )
+   {
+      fprintf(fd, "%d %u\n", s_iHardwareSystemIsVehicle, s_uHardwareBoardType);
+      fclose(fd);
+      hardware_file_check_and_fix_access(szFile);
+   }
+
+   char szBuff[256];
+   strncpy(szBuff, str_get_hardware_board_name(s_uHardwareBoardType), 255);
+   if ( szBuff[0] == 0 )
+      strcpy(szBuff, "N/A");
+
+   strcpy(szFile, FOLDER_RUBY_TEMP);
+   strcat(szFile, FILE_CONFIG_BOARD_TYPE);
+   hardware_file_check_and_fix_access(szFile);
+   fd = fopen(szFile, "w");
+   if ( NULL == fd )
+      log_softerror_and_alarm("[Hardware] Failed to save board configuration to file: %s", szFile);
+   else
+   {
+      fprintf(fd, "%u %s\n", s_uHardwareBoardType, szBuff);
+      fclose(fd);
+      hardware_file_check_and_fix_access(szFile);
+   }
+
+   #if defined (HW_PLATFORM_RASPBERRY)
+   fd = fopen("/boot/ruby_board.txt", "w");
+   if ( NULL != fd )
+   {
+      fprintf(fd, "%u\n", s_uHardwareBoardType);
+      fclose(fd);
+      hardware_file_check_and_fix_access(szFile);
+   }
+   hw_execute_bash_command("cat /proc/device-tree/model > /boot/ruby_board_desc.txt", NULL);
+   #endif
+
+   #if defined (HW_PLATFORM_OPENIPC_CAMERA)
+   hw_execute_bash_command("cat /proc/device-tree/model > /root/ruby/config/ruby_board_desc.txt", NULL);
+   #endif
+}
+
 int hardware_board_is_raspberry(u32 uBoardType)
 {
    if ( (uBoardType & BOARD_TYPE_MASK) > 0 )
@@ -948,11 +968,13 @@ void hardware_enum_joystick_interfaces()
    }
    #endif
    #if defined (HW_PLATFORM_RADXA)
+   SDL_Quit();
    SDL_JoystickEventState(SDL_ENABLE);
    if ( SDL_Init(SDL_INIT_JOYSTICK) < 0 )
       log_softerror_and_alarm("[Hardware] Failed to init SDL for joystick.");
    else
    {
+      SDL_JoystickEventState(SDL_ENABLE);
       int iCountJoysticks = SDL_NumJoysticks();
       if ( iCountJoysticks < 0 )
          log_softerror_and_alarm("[Hardware] Failed to query SDL for joysticks count.");
@@ -1104,6 +1126,13 @@ int hardware_is_joystick_opened(int joystickIndex)
    return 1;
 }
 
+void hardware_uninit_joysticks()
+{
+   #if defined HW_PLATFORM_RADXA
+   SDL_Quit();
+   #endif
+}
+
 // Returns the count of new events
 // Return -1 on error
 
@@ -1172,6 +1201,11 @@ int hardware_read_joystick(int joystickIndex, int miliSec)
    SDL_Event event;
    while ((iCount > 0) && (SDL_PollEvent(&event) != 0))
    {
+      if ( event.type == SDL_JOYDEVICEREMOVED )
+      {
+         log_line("[Hardware] Detected joystick removed.");
+         return -1;
+      }
       iCount--;
    }
 

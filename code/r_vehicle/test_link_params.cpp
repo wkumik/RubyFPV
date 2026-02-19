@@ -157,7 +157,7 @@ void _test_link_end_and_notify()
 
    ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)&PH, PH.total_length);
    ruby_ipc_channel_send_message(s_fIPCRouterToCommands, (u8*)&PH, PH.total_length);
-   if ( g_pCurrentModel->rc_params.rc_enabled )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
       ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)&PH, PH.total_length);
    
    if ( NULL != g_pProcessStats )

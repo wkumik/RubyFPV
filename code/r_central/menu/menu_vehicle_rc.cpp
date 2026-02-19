@@ -59,14 +59,36 @@ MenuVehicleRC::MenuVehicleRC(void)
    m_yPos = 0.19;
    float fSliderWidth = 0.09 * Menu::getScaleFactor();
 
+   ControllerInterfacesSettings* pCI = get_ControllerInterfacesSettings();
+   log_line("MenuVehicleRC: RC Enabled: %s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?"Yes":"No");
+   log_line("MenuVehicleRC: RC Channels: %d", g_pCurrentModel->rc_params.channelsCount);
+   log_line("MenuVehicleRC: RC Output Enabled: %s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?"Yes":"No");
+   log_line("MenuVehicleRC: RC failsafe time: %d ms", g_pCurrentModel->rc_params.rc_failsafe_timeout_ms);
+   log_line("MenuVehicleRC: RC Input HID Id: %u", g_pCurrentModel->rc_params.hid_id);
+   log_line("MenuVehicleRC: Hardware input devices: %d", pCI->inputInterfacesCount);
+   for( int i=0; i<pCI->inputInterfacesCount; i++ )
+   {
+      t_ControllerInputInterface* pCII = controllerInterfacesGetAt(i);
+      if ( NULL == pCII )
+         continue;
+      log_line("MenuVehicleRC: Hardware input device %d: HID: %u, name: %s", i, pCII->uId, pCII->szInterfaceName);
+   }
+   log_line("MenuVehicleRC: RC Input type: %u", g_pCurrentModel->rc_params.inputType);
+   log_line("MenuVehicleRC: RC Input translation type: %u", g_pCurrentModel->rc_params.iRCTranslationType);
+
    m_uLastSBUSFrameTime = 0;
    m_uLastSBUSFrameIndex = 0;
    m_bSBUSInverted = false;
    m_iI2CRCINAddress = -1;
-   ControllerInterfacesSettings* pCI = get_ControllerInterfacesSettings();
 
    if ( 0 == pCI->inputInterfacesCount )
       controllerInterfacesEnumJoysticks();
+
+   for( int i=0; i<MAX_RC_CHANNELS; i++ )
+   {
+      m_CurrentRCValues[i] = 0;
+      log_line("RC ch %d expo: %d %%", i, g_pCurrentModel->rc_params.rcChExpo[i]);
+   }
 
    m_IndexThrotleReverse = -1;
    m_bWaitingForInput = false;
@@ -97,7 +119,6 @@ MenuVehicleRC::MenuVehicleRC(void)
    m_pItemsSelect[16]->disableClick();
    m_IndexRCInputType = addMenuItem(m_pItemsSelect[16]);
 
-
    if ( NULL != g_pCurrentModel )
       log_line("Primary HID for this vehicle: HID id: %u", g_pCurrentModel->rc_params.hid_id);
 
@@ -113,7 +134,7 @@ MenuVehicleRC::MenuVehicleRC(void)
       if ( NULL == pCII )
          continue;
       m_pItemsSelect[15]->addSelection(pCII->szInterfaceName);
-      if ( NULL != g_pCurrentModel && pCII->uId == g_pCurrentModel->rc_params.hid_id )
+      if ( (NULL != g_pCurrentModel) && (pCII->uId == g_pCurrentModel->rc_params.hid_id) )
       {
          log_line("Found primary HID for this vehicle: HID id: %u", pCII->uId);
          m_pItemsSelect[15]->setSelectedIndex(i);
@@ -122,18 +143,12 @@ MenuVehicleRC::MenuVehicleRC(void)
          hardware_open_joystick( m_pJoystick->currentHardwareIndex );
       }
    }
+   m_pItemsSelect[15]->addSelection(L("None"));
    m_pItemsSelect[15]->setIsEditable();
    m_IndexHIDPrimary = addMenuItem(m_pItemsSelect[15]);
-   if ( 0 == pCI->inputInterfacesCount )
-   {
-      m_pItemsSelect[15]->addSelection("None Detected");
-      m_pItemsSelect[15]->setEnabled(false);
-   }
-   else if ( -1 == m_nIndexPrimaryHID )
-   {
-      m_pItemsSelect[15]->addSelection("Unknown");
+
+   if ( -1 == m_nIndexPrimaryHID )
       m_pItemsSelect[15]->setSelectedIndex(m_pItemsSelect[15]->getSelectionsCount()-1);
-   }
 
    m_pItemsSelect[1] = new MenuItemSelect("RC Output Channels Count", "Sets how many RC channels to send to the flight controller.");
    m_pItemsSelect[1]->addSelection("2");
@@ -280,8 +295,11 @@ void MenuVehicleRC::updateUIState(bool bEnable)
    m_pMenuItems[m_IndexFailsafeValues]->setEnabled(bEnable && (m_pItemsSelect[4]->getSelectedIndex() == 3));
    m_pItemsSelect[10]->setEnabled(bEnable);
    m_pItemsSelect[15]->setEnabled(bEnable);
-   if ( 0 == pCI->inputInterfacesCount || (g_pCurrentModel->rc_params.inputType != RC_INPUT_TYPE_USB) )
+   if ( (0 == pCI->inputInterfacesCount) || (g_pCurrentModel->rc_params.inputType != RC_INPUT_TYPE_USB) )
+   {
       m_pItemsSelect[15]->setEnabled(false);
+      m_pItemsSelect[15]->setSelectedIndex(m_pItemsSelect[15]->getSelectionsCount()-1);
+   }
    m_pItemsSelect[16]->setEnabled(bEnable);
 
    if ( -1 != m_IndexThrotleReverse )
@@ -310,7 +328,7 @@ void MenuVehicleRC::valuesToUI()
          m_bSBUSInverted = false;
    }
 
-   m_pItemsSelect[0]->setSelection((int)(g_pCurrentModel->rc_params.rc_enabled));
+   m_pItemsSelect[0]->setSelection((g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?1:0);
 
    int index = g_pCurrentModel->rc_params.channelsCount;
    if ( index < 2 )
@@ -330,7 +348,7 @@ void MenuVehicleRC::valuesToUI()
       fsMode = 3;
    m_pItemsSelect[4]->setSelection(fsMode);
 
-   m_pItemsSelect[10]->setSelectedIndex((g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED)?1:0);
+   m_pItemsSelect[10]->setSelectedIndex((g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?1:0);
    if ( p->iActionQuickButton1 == quickActionRCEnable )
       m_pItemsSelect[10]->setSelectedIndex(2);
    if ( p->iActionQuickButton2 == quickActionRCEnable )
@@ -338,12 +356,13 @@ void MenuVehicleRC::valuesToUI()
    if ( p->iActionQuickButton3 == quickActionRCEnable )
       m_pItemsSelect[10]->setSelectedIndex(4);
 
+   m_pItemsSelect[15]->setSelectedIndex(m_pItemsSelect[15]->getSelectionsCount()-1);
    for( int i=0; i<pCI->inputInterfacesCount; i++ )
    {
       t_ControllerInputInterface* pCII = controllerInterfacesGetAt(i);
       if ( NULL == pCII )
          continue;
-      if ( NULL != g_pCurrentModel && pCII->uId == g_pCurrentModel->rc_params.hid_id )
+      if ( (NULL != g_pCurrentModel) && (pCII->uId == g_pCurrentModel->rc_params.hid_id) )
       {
          log_line("Update UI: Found primary HID for this vehicle: HID id: %u", pCII->uId);
          m_pItemsSelect[15]->setSelectedIndex(i);
@@ -386,7 +405,7 @@ void MenuVehicleRC::valuesToUI()
       m_pItemsSelect[5]->setSelectedIndex(0);
    }
 
-   updateUIState( g_pCurrentModel->rc_params.rc_enabled );
+   updateUIState( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?true:false );
 
    if ( (g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_NONE) || (g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS) )
    {
@@ -412,7 +431,7 @@ bool MenuVehicleRC::periodicLoop()
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_NONE )
       return false;
 
-   if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB && (0 == pCI->inputInterfacesCount) )
+   if ( (g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB) && (0 == pCI->inputInterfacesCount) )
       return false;
 
    if ( m_bIsAnimationInProgress )
@@ -420,45 +439,47 @@ bool MenuVehicleRC::periodicLoop()
 
    if ( ! menu_is_menu_on_top(this) )
       return false;
-   hw_joystick_info_t* pJoy = NULL;
 
+   hw_joystick_info_t* pJoy = NULL;
    u32 timeNow = g_TimeNow;
    u32 miliSec = timeNow - m_TimeLastRCCompute;
    m_TimeLastRCCompute = timeNow;
 
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
+   if ( (-1 == m_nIndexPrimaryHID) || (NULL == m_pJoystick) )
    {
-      if ( -1 == m_nIndexPrimaryHID || NULL == m_pJoystick )
+      for( int i=0; i<pCI->inputInterfacesCount; i++ )
       {
-         for( int i=0; i<pCI->inputInterfacesCount; i++ )
+         t_ControllerInputInterface* pCII = controllerInterfacesGetAt(i);
+         if ( NULL == pCII )
+            continue;
+         if ( (NULL != g_pCurrentModel) && (pCII->uId == g_pCurrentModel->rc_params.hid_id) )
          {
-            t_ControllerInputInterface* pCII = controllerInterfacesGetAt(i);
-            if ( NULL == pCII )
-               continue;
-            if ( NULL != g_pCurrentModel && pCII->uId == g_pCurrentModel->rc_params.hid_id )
-            {
-               log_line("Found primary HID for this vehicle: HID id: %u", pCII->uId);
-               m_nIndexPrimaryHID = i;
-               m_pJoystick = pCII;
-               hardware_open_joystick( m_pJoystick->currentHardwareIndex );
-            }
+            log_line("Found primary HID for this vehicle: HID id: %u", pCII->uId);
+            m_nIndexPrimaryHID = i;
+            m_pJoystick = pCII;
+            hardware_open_joystick( m_pJoystick->currentHardwareIndex );
          }
       }
+   }
 
-      if ( -1 == m_nIndexPrimaryHID || NULL == m_pJoystick )
-         return false;
+   if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
+   if ( (-1 == m_nIndexPrimaryHID) || (NULL == m_pJoystick) )
+      return false;
 
+   if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
+   {
       pJoy = hardware_get_joystick_info(m_pJoystick->currentHardwareIndex);
       if ( NULL == pJoy )
       {
          for( int i=0; i<g_pCurrentModel->rc_params.channelsCount; i++ )
-            m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], &g_SM_RCIn, NULL, NULL, miliSec);
+            m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], NULL, NULL, NULL, miliSec);
          return false;
       }
       if ( 0 == hardware_is_joystick_opened(m_pJoystick->currentHardwareIndex) )
       {
          for( int i=0; i<g_pCurrentModel->rc_params.channelsCount; i++ )
-            m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], &g_SM_RCIn, NULL, NULL, miliSec);
+            m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], NULL, NULL, NULL, miliSec);
 
          if ( g_TimeNow > m_TimeLastJoystickCheck + 500 )
          {
@@ -477,7 +498,7 @@ bool MenuVehicleRC::periodicLoop()
       }
       for( int i=0; i<g_pCurrentModel->rc_params.channelsCount; i++ )
       {
-         m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], &g_SM_RCIn, pJoy, m_pJoystick, miliSec);
+         m_CurrentRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, m_CurrentRCValues[i], NULL, pJoy, m_pJoystick, miliSec);
       }
    }
 
@@ -673,7 +694,7 @@ void MenuVehicleRC::renderLiveValues()
       bIsFailSafe = true;
 
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
-   if ( -1 == m_nIndexPrimaryHID || NULL == m_pJoystick )
+   if ( (-1 == m_nIndexPrimaryHID) || (NULL == m_pJoystick) || (0 == g_pCurrentModel->rc_params.hid_id) )
       bIsFailSafe = true;
 
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
@@ -730,10 +751,14 @@ void MenuVehicleRC::renderLiveValues()
 
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
    {
-      bHasInputSource = true;
-      strcpy(szBuff, "USB Joystick");
+      if ( (-1 != m_nIndexPrimaryHID) && (NULL != m_pJoystick) && (0 != g_pCurrentModel->rc_params.hid_id) )
+      {
+         bHasInputSource = true;
+         strcpy(szBuff, "USB Joystick");
+      }
+      else
+         strcpy(szBuff, "No USB input selected");
    }
-
    if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
    {
       bHasInputSource = true;
@@ -755,12 +780,12 @@ void MenuVehicleRC::renderLiveValues()
    y += height_text*1.1;
 
    g_pRenderEngine->drawText(xPos, y, g_idFontMenu, "RC Output:");
-   sprintf(szBuff, "%s", (g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED)?"Enabled":"Disabled");
-   if ( ! g_pCurrentModel->rc_params.rc_enabled )
+   sprintf(szBuff, "%s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?"Enabled":"Disabled");
+   if ( ! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       strcpy(szBuff, "Disabled (RC Disabled)");
 
-   if ( g_pCurrentModel->rc_params.rc_enabled )
-   if ( g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED )
       g_pRenderEngine->setColors(get_Color_IconError());
 
    g_pRenderEngine->drawTextLeft(xPos + fWidth - fPaddingX, y, g_idFontMenu, szBuff);
@@ -852,13 +877,14 @@ void MenuVehicleRC::renderLiveValues()
          if ( RC_FAILSAFE_BELOWRANGE == fsChType )
             val = fsValue;
       }
-      if ( (val < 0) || (val > 2500) )
+      if ( (val < 0) || (val > 4000) )
          val = 0;
       g_pRenderEngine->setColors(get_Color_MenuText());
       g_pRenderEngine->setFill(0,100,0,0.8);
       g_pRenderEngine->setStroke(0,0,0,0);
       g_pRenderEngine->setStrokeSize(0);
-      if ( (val >= 0) && (val < 2500) )
+      if ( val > g_pCurrentModel->rc_params.rcChMin[ch] )
+      if ( val <= g_pCurrentModel->rc_params.rcChMax[ch] )
          g_pRenderEngine->drawRoundRect(x1+padding, y, (rectW-2*padding)*(float)(val-g_pCurrentModel->rc_params.rcChMin[ch])/(g_pCurrentModel->rc_params.rcChMax[ch]-g_pCurrentModel->rc_params.rcChMin[ch]), rectH, corner);
 
       g_pRenderEngine->setColors(get_Color_MenuText(), 0.7);
@@ -904,7 +930,12 @@ void MenuVehicleRC::renderLiveValues()
 
       if ( g_pCurrentModel->rc_params.inputType != RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
       {
-         sprintf(szBuff, "%d%%", g_pCurrentModel->rc_params.rcChExpo[ch]);
+         if ( g_pCurrentModel->rc_params.rcChExpo[ch] < 0 )
+           strcpy(szBuff, "NA");
+         else if ( g_pCurrentModel->rc_params.rcChExpo[ch] > 100)
+           strcpy(szBuff, "100+ %%");
+         else
+            sprintf(szBuff, "%d%%", g_pCurrentModel->rc_params.rcChExpo[ch]);
          g_pRenderEngine->drawText(x3, y, g_idFontMenu, szBuff);
       }
       y += height_text;
@@ -938,14 +969,21 @@ void MenuVehicleRC::onReturnFromChild(int iChildMenuId, int returnValue)
       rc_parameters_t params;
 
       memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
-      params.rc_enabled = m_bPendingEnable;
+      if ( m_bPendingEnable )
+         params.uRCFlags |= RC_FLAGS_ENABLED;
+      else
+         params.uRCFlags &= ~RC_FLAGS_ENABLED;
 
-      if ( pCI->inputInterfacesCount > 0 )
+      if ( m_pItemsSelect[15]->getSelectedIndex() == (m_pItemsSelect[15]->getSelectionsCount()-1) )
+         params.hid_id = 0;
+      else if ( pCI->inputInterfacesCount > 0 )
       {
          t_ControllerInputInterface* pCII = controllerInterfacesGetAt(m_pItemsSelect[15]->getSelectedIndex());
          if ( pCII != NULL )
             params.hid_id = pCII->uId;
       }
+      for( int i=0; i<MAX_RC_CHANNELS; i++ )
+         m_CurrentRCValues[i] = 0;
 
       if ( ! handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t)) )
          valuesToUI();
@@ -1005,7 +1043,7 @@ void MenuVehicleRC::onSelectItem()
    if ( m_IndexRCEnabled == m_SelectedIndex )
    {
       bool enable = (0 != m_pItemsSelect[0]->getSelectedIndex());
-      if ( enable == g_pCurrentModel->rc_params.rc_enabled )
+      if ( enable == ((g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?true:false) )
          return;
 
       // Confirm change if vehicle is armed
@@ -1032,14 +1070,22 @@ void MenuVehicleRC::onSelectItem()
       rc_parameters_t params;
 
       memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
-      params.rc_enabled = enable;
+      if ( enable )
+         params.uRCFlags |= RC_FLAGS_ENABLED;
+      else
+         params.uRCFlags &= ~RC_FLAGS_ENABLED;
 
-      if ( pCI->inputInterfacesCount > 0 )
+      if ( m_pItemsSelect[15]->getSelectedIndex() == (m_pItemsSelect[15]->getSelectionsCount()-1) )
+         params.hid_id = 0;
+      else if ( pCI->inputInterfacesCount > 0 )
       {
          t_ControllerInputInterface* pCII = controllerInterfacesGetAt(m_pItemsSelect[15]->getSelectedIndex());
          if ( pCII != NULL )
             params.hid_id = pCII->uId;
       }
+
+      for( int i=0; i<MAX_RC_CHANNELS; i++ )
+         m_CurrentRCValues[i] = 0;
 
       if ( ! handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t)) )
          valuesToUI();
@@ -1049,27 +1095,34 @@ void MenuVehicleRC::onSelectItem()
 
    if ( m_IndexHIDPrimary == m_SelectedIndex )
    {
-      if ( m_pItemsSelect[15]->getSelectedIndex() >= pCI->inputInterfacesCount )
-         return;
-
       if ( NULL != m_pJoystick )
          hardware_close_joystick(m_pJoystick->currentHardwareIndex);
-
-      t_ControllerInputInterface* pCII = controllerInterfacesGetAt(m_pItemsSelect[15]->getSelectedIndex());
-      if ( NULL == pCII )
-         return;
-
-      m_nIndexPrimaryHID = m_pItemsSelect[15]->getSelectedIndex();
-      m_pJoystick = pCII;
-      hardware_open_joystick( m_pJoystick->currentHardwareIndex );
-
-      if ( pCII->uId == g_pCurrentModel->rc_params.hid_id )
-         return;
-
+      m_pJoystick = NULL;
+      m_nIndexPrimaryHID = -1;
       rc_parameters_t params;
       memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
-      params.hid_id = pCII->uId;
+
+      if ( m_pItemsSelect[15]->getSelectedIndex() == (m_pItemsSelect[15]->getSelectionsCount()-1) )
+         params.hid_id = 0;
+      else
+      {
+         t_ControllerInputInterface* pCII = controllerInterfacesGetAt(m_pItemsSelect[15]->getSelectedIndex());
+         if ( NULL == pCII )
+            params.hid_id = 0;
+         else
+         {
+            m_nIndexPrimaryHID = m_pItemsSelect[15]->getSelectedIndex();
+            m_pJoystick = pCII;
+            hardware_open_joystick(m_pJoystick->currentHardwareIndex);
+            params.hid_id = pCII->uId;
+            log_line("MenuVehicleRC: Set active HID as controler input device index %d, HID ID: %u", m_pItemsSelect[15]->getSelectedIndex(), pCII->uId);
+         }
+      }      
      
+      for( int i=0; i<MAX_RC_CHANNELS; i++ )
+         m_CurrentRCValues[i] = 0;
+
+      log_line("MenuVehicleRC: Send new HID Id %u to vehicle, rc struct size: %d bytes, for %d channels", params.hid_id, sizeof(rc_parameters_t), MAX_RC_CHANNELS);
       if ( ! handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t)) )
          valuesToUI();
       return;
@@ -1080,17 +1133,17 @@ void MenuVehicleRC::onSelectItem()
       int index = m_pItemsSelect[10]->getSelectedIndex();
       int enabled = m_pItemsSelect[10]->getSelectedIndex();
 
-      int current = (g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED)?1:0;
-      if ( (enabled == 0 || enabled == 1) && enabled == current )
+      int current = (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?1:0;
+      if ( ((enabled == 0) || (enabled == 1)) && (enabled == current) )
          return;
 
       rc_parameters_t params;
       memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
 
       if ( enabled == 1 )
-         params.flags |= RC_FLAGS_OUTPUT_ENABLED;
+         params.uRCFlags |= RC_FLAGS_OUTPUT_ENABLED;
       if ( enabled == 0 )
-         params.flags &= (~RC_FLAGS_OUTPUT_ENABLED);
+         params.uRCFlags &= (~RC_FLAGS_OUTPUT_ENABLED);
 
       if ( enabled == 0 || enabled == 1 )
       {
@@ -1110,7 +1163,7 @@ void MenuVehicleRC::onSelectItem()
 
          save_Preferences();      
 
-         log_dword("Sending RC flags: ", g_pCurrentModel->rc_params.flags);
+         log_dword("Sending RC flags: ", g_pCurrentModel->rc_params.uRCFlags);
          if ( ! handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t)) )
             valuesToUI();
       }

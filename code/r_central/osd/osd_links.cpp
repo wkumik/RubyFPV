@@ -175,7 +175,7 @@ float _osd_show_link_bars(float xPos, float yPos, u32 uLastRxTime, float fQualit
    if ( !(pActiveModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
       bNegociatedRadio = false;
 
-   if ( !(pActiveModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
+   if ( !(pActiveModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
       bNegociatedRadio = false;
 
    bool bShowRed = false;

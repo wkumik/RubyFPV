@@ -264,29 +264,49 @@ void reopen_marked_sik_interfaces()
    log_line("[Router] Reopened SiK radio interfaces (%d reopened).", iCount);
 }
 
+static u32 s_uStartTimeFlagSendRadioConfigToController = 0;
+static u32 s_uLastTimeSentRadioConfigToController = 0;
+static u8 s_uLastRadioConfigSentFlags = 0;
+void flag_send_radio_config_to_controller()
+{
+   s_uStartTimeFlagSendRadioConfigToController = g_TimeNow;
+}
 
 void send_radio_config_to_controller()
 {
-   if ( NULL == g_pCurrentModel )
-   {
-      log_softerror_and_alarm("Tried to send current radio config to controller but there is no current model.");
+   if ( (g_TimeNow < s_uLastTimeSentRadioConfigToController + 100) || (NULL == g_pCurrentModel) )
       return;
-   }
  
    log_line("Notify controller (send a radio message, from VID %u to VID %u) about current vehicle radio configuration.", g_pCurrentModel->uVehicleId, g_uControllerId);
 
+   s_uLastTimeSentRadioConfigToController = g_TimeNow;
+   s_uLastRadioConfigSentFlags = (s_uLastRadioConfigSentFlags+1) % 2;
+
    t_packet_header PH;
-   radio_packet_init(&PH, PACKET_COMPONENT_RUBY, PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED, STREAM_ID_DATA);
+   radio_packet_init(&PH, PACKET_COMPONENT_RUBY, PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG, STREAM_ID_DATA);
    PH.vehicle_id_src = g_pCurrentModel->uVehicleId;
    PH.vehicle_id_dest = g_uControllerId;
-   PH.total_length = sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters) + sizeof(type_radio_runtime_capabilities_parameters);
+   PH.total_length = sizeof(t_packet_header) + sizeof(u8);
+   if ( 0 == s_uLastRadioConfigSentFlags )
+      PH.total_length += sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters);
+   else
+      PH.total_length += sizeof(type_radio_interfaces_runtime_capabilities_parameters);
 
    u8 packet[MAX_PACKET_TOTAL_SIZE];
    memcpy(packet, (u8*)&PH, sizeof(t_packet_header));
-   memcpy(packet + sizeof(t_packet_header), (u8*)&(g_pCurrentModel->relay_params), sizeof(type_relay_parameters));
-   memcpy(packet + sizeof(t_packet_header) + sizeof(type_relay_parameters), (u8*)&(g_pCurrentModel->radioInterfacesParams), sizeof(type_radio_interfaces_parameters));
-   memcpy(packet + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), (u8*)&(g_pCurrentModel->radioLinksParams), sizeof(type_radio_links_parameters));
-   memcpy(packet + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters), (u8*)&(g_pCurrentModel->radioRuntimeCapabilities), sizeof(type_radio_runtime_capabilities_parameters));
+   packet[sizeof(t_packet_header)] = s_uLastRadioConfigSentFlags;
+   u8* pTmp = &(packet[sizeof(t_packet_header) + sizeof(u8)]);
+   if ( 0 == s_uLastRadioConfigSentFlags )
+   {
+      memcpy(pTmp, (u8*)&(g_pCurrentModel->relay_params), sizeof(type_relay_parameters));
+      pTmp += sizeof(type_relay_parameters);
+      memcpy(pTmp, (u8*)&(g_pCurrentModel->radioInterfacesParams), sizeof(type_radio_interfaces_parameters));
+      pTmp += sizeof(type_radio_interfaces_parameters);
+      memcpy(pTmp, (u8*)&(g_pCurrentModel->radioLinksParams), sizeof(type_radio_links_parameters));
+   }
+   else
+      memcpy(pTmp, (u8*)&(g_pCurrentModel->radioInterfacesRuntimeCapab), sizeof(type_radio_interfaces_runtime_capabilities_parameters));
+
    //send_packet_to_radio_interfaces(packet, PH.total_length, -1);
    packets_queue_add_packet(&g_QueueRadioPacketsOut, packet);
 }
@@ -1219,7 +1239,7 @@ int main(int argc, char *argv[])
 
    hardware_sleep_ms(50);
    radio_init_link_structures();
-   if ( g_pCurrentModel->rc_params.rc_enabled )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
    {
       log_line("RC link is enabled. Slow down telemetry packets frequency on slow links.");
       radio_reset_packets_default_frequencies(1);
@@ -1275,6 +1295,7 @@ int main(int argc, char *argv[])
   
    log_line("Start sequence: Done setting up radio stats history.");
 
+   g_TimeNow = get_current_timestamp_ms();
    video_sources_init();
 
    adaptive_video_init();
@@ -1325,7 +1346,7 @@ int main(int argc, char *argv[])
    else
       log_line("Opened semaphore for watching for stop signal.");
    
-   send_radio_config_to_controller();
+   flag_send_radio_config_to_controller();
 
    reset_counters(&g_CoutersMainLoop);
    log_line("Running main loop for sync type: %d", g_pCurrentModel->rxtx_sync_type);
@@ -1732,6 +1753,17 @@ void _main_loop2()
       _show_cam_hist_dbg_stats();
    }
 
+   if ( g_pCurrentModel->relay_params.uRelayedVehicleId != 0 )
+   if ( packets_queue_has_packets(&g_QueueRelayRadioPacketsOutToRelayedVehicle) )
+   {
+      g_TimeNow = get_current_timestamp_ms();
+      radio_rx_check_update_eof(g_TimeNow, (((u32)g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags) & VIDEO_PROFILE_FLAG_MASK_RETRANSMISSIONS_GUARD_MASK)>>8, g_pCurrentModel->video_params.iVideoFPS, g_pCurrentModel->getCurrentVideoProfileMaxRetransmissionWindow());
+      bool bIsEOF = radio_rx_is_eof_detected()?true:false;
+
+      if ( bIsEOF || (g_TimeNow > g_QueueRelayRadioPacketsOutToRelayedVehicle.timeFirstPacket + 55) )
+         relay_send_outgoing_radio_packets_to_relayed_vehicle();
+   }
+
    g_pProcessStats->uLoopTimer2 = get_current_timestamp_ms();
    g_pProcessStats->uLoopSubStep = 15;
 
@@ -1819,6 +1851,10 @@ void _main_loop2()
          reinit_radio_interfaces();
          return;
       }
+
+      if ( 0 != s_uStartTimeFlagSendRadioConfigToController )
+      if ( g_TimeNow < s_uStartTimeFlagSendRadioConfigToController + 1000 )
+         send_radio_config_to_controller();
 
       _synchronize_shared_mems();
       g_pProcessStats->uLoopSubStep = 49;

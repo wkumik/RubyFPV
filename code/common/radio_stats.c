@@ -685,6 +685,16 @@ void radio_stats_log_tx_info(shared_mem_radio_stats* pSMRS, u32 uVehicleId, u32 
          }
       }
    }
+
+   if ( pSMRS->countLocalRadioInterfaces > 1 )
+   {
+      for( int i=0; i<pSMRS->countLocalRadioInterfaces; i++ )
+      {
+         log_line("Radio Interface %d (%s, radio link %d) tx throughput: %d pckts/sec", i+1, 
+            str_format_frequency(pSMRS->radio_interfaces[i].uCurrentFrequencyKhz), pSMRS->radio_interfaces[i].assignedVehicleRadioLinkId + 1,
+            pSMRS->radio_interfaces[i].txPacketsPerSec);
+      }
+   }
 }
 
 void _radio_stats_update_kbps_values(shared_mem_radio_stats* pSMRS, u32 uDeltaTime)

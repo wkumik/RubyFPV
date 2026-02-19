@@ -441,31 +441,31 @@ int _compute_packet_uplink_datarate_radioflags_tx_power(int iVehicleRadioLink, i
 
    t_packet_header* pPH = (t_packet_header*)pPacketData;
 
-   bool bUseLowest = false;
+   bool bUseLowestDR = false;
    int iRuntimeIndex = getVehicleRuntimeIndex(g_pCurrentModel->uVehicleId);
    if ( -1 != iRuntimeIndex )
    {
       if ( g_State.vehiclesRuntimeInfo[iRuntimeIndex].bIsVehicleFastUplinkFromControllerLost )
-         bUseLowest = true;
+         bUseLowestDR = true;
       if ( g_State.vehiclesRuntimeInfo[iRuntimeIndex].uLastTimeReceivedAckFromVehicle > g_TimeNow + 1000 )
-         bUseLowest = true;
+         bUseLowestDR = true;
    }
 
    if ( (pPH->packet_type == PACKET_TYPE_NEGOCIATE_RADIO_LINKS) ||
         (pPH->packet_type == PACKET_TYPE_RUBY_PAIRING_REQUEST) ||
         (pPH->packet_type == PACKET_TYPE_RUBY_PAIRING_CONFIRMATION) ||
         test_link_is_in_progress() )
-      bUseLowest = true;
+      bUseLowestDR = true;
 
    //--------------------------------------------
    // Radio flags - begin
 
-   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[iVehicleRadioLink];
+   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iVehicleRadioLink];
 
    /*
-   if ( bUseLowest )
+   if ( bUseLowestDR )
    {
-      if ( g_pCurrentModel->radioLinksParams.link_radio_flags[iVehicleRadioLink] & RADIO_FLAGS_USE_MCS_DATARATES )
+      if ( g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iVehicleRadioLink] & RADIO_FLAGS_USE_MCS_DATARATES )
          uRadioFlags = RADIO_FLAGS_USE_MCS_DATARATES | RADIO_FLAGS_FRAME_TYPE_DATA;
       else
          uRadioFlags = RADIO_FLAGS_USE_LEGACY_DATARATES | RADIO_FLAGS_FRAME_TYPE_DATA;
@@ -480,9 +480,9 @@ int _compute_packet_uplink_datarate_radioflags_tx_power(int iVehicleRadioLink, i
 
    int iDataRateTx = g_pCurrentModel->radioLinksParams.uplink_datarate_data_bps[iVehicleRadioLink];
 
-   if ( (0 == iDataRateTx) || (-100 == iDataRateTx) || bUseLowest )
+   if ( (0 == iDataRateTx) || (-100 == iDataRateTx) || bUseLowestDR )
    {
-      if ( g_pCurrentModel->radioLinksParams.link_radio_flags[iVehicleRadioLink] & RADIO_FLAGS_USE_MCS_DATARATES )
+      if ( g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iVehicleRadioLink] & RADIO_FLAGS_USE_MCS_DATARATES )
          iDataRateTx = -1;
       else
          iDataRateTx = DEFAULT_RADIO_DATARATE_LOWEST;

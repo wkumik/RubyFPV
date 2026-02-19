@@ -312,7 +312,7 @@ void MenuVehicleRadioConfig::populateFrequencies()
 
       m_pItemsSelect[20+iRadioLinkId] = new MenuItemSelect(szTitle, szTooltip);
 
-      if ( g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId == iRadioLinkId )
+      if ( (g_pCurrentModel->relay_params.uRelayedVehicleId != 0) && (g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId == iRadioLinkId) )
       {
          sprintf(szBuff, "Relay on %s", str_format_frequency(g_pCurrentModel->relay_params.uRelayFrequencyKhz));
          m_pItemsSelect[20+iRadioLinkId]->addSelection(szBuff);
@@ -386,7 +386,7 @@ void MenuVehicleRadioConfig::populateTxPowers()
       {
          if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] != iLink )
             continue;
-         if ( ! hardware_radio_type_is_ieee(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+         if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
             continue;
 
          int iCardModel = g_pCurrentModel->radioInterfacesParams.interface_card_model[i];
@@ -413,7 +413,6 @@ void MenuVehicleRadioConfig::populateTxPowers()
       m_pItemsSelect[40+iLink] = createMenuItemTxPowers(szTitle, false, bBoost2W, bBoost4W, iVehicleLinkPowerMaxMw);
       m_IndexTxPowers[iLink] = addMenuItem(m_pItemsSelect[40+iLink]);
       selectMenuItemTxPowersValue(m_pItemsSelect[40+iLink], false, bBoost2W, bBoost4W, &(iLinkPowersMw[0]), iCountLinkInterfaces, iVehicleLinkPowerMaxMw);
-
    }
 
    /*
@@ -639,7 +638,7 @@ void MenuVehicleRadioConfig::computeSendPowerToVehicle(int iVehicleLinkIndex)
 
       if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] != iVehicleLinkIndex )
          continue;
-      if ( ! hardware_radio_type_is_ieee(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+      if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
          continue;
 
       int iCardModel = g_pCurrentModel->radioInterfacesParams.interface_card_model[i];

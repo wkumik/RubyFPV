@@ -196,8 +196,13 @@ typedef struct
 // Has an optional u32 param after header: count of received pairing requests;
 // Has an optional software verion u16 byte-maj.byte-minor
 
-#define PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED 9 // Sent by vehicle to controller to let it know about the current radio config.
-                                           // Contains a type_relay_parameters, type_radio_interfaces_parameters and a type_radio_links_parameters
+#define PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG 10
+// Sent by vehicle to controller to let it know about the current radio config.
+// Contains:
+// byte: type: 0: relay,radio info:
+//       type_relay_parameters, type_radio_interfaces_parameters and a type_radio_links_parameters
+//       type: 1: runtime capab
+//       type_radio_interfaces_runtime_capabilities_parameters
 
 
 //---------------------------------------
@@ -899,7 +904,7 @@ byte 4: command type:
 // u8:  uCommand
 //
 // Command 1: test radio params
-//    u8:  vehicle radio link to test/apply to
+//    u8:  vehicle radio interface to test/apply to
 //    int: radio datarate to test/apply
 //    u32: radio flags to test/apply
 //    int: tx power (mw) to test/apply
@@ -908,11 +913,10 @@ byte 4: command type:
 //    u8:  1 - canceled; 0 - finished normally
 
 // Command 255: apply radio params
-//    u8:  vehicle radio link to test/apply to
-//    int: radio datarate to test/apply
-//    u32: radio flags to test/apply
-//    int: tx power (mw) to test/apply
-//    when sending to vehicle, has also a type_radio_runtime_capabilities_parameters structure at the end
+//    u32[max_radio_interfaces]: interfaces supported radio flags to apply
+//    u32[max_radio_interfaces]: radio links tx radio flags to apply
+//    u32[max_radio_interfaces]: radio links rx radio flags to apply
+//    when sending to vehicle, has also a type_radio_interfaces_runtime_capabilities_parameters structure at the end
 
 #define PACKET_TYPE_OTA_UPDATE_STATUS 75
 //

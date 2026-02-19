@@ -5,7 +5,7 @@ void adaptive_video_reset_to_defaults();
 void adaptive_video_reset_requested_keyframe();
 void adaptive_video_save_state();
 void adaptive_video_load_state();
-int  adaptive_video_get_current_dr_boost();
+int  adaptive_video_get_current_dr_boost(int iRadioInterfaceIndex);
 int  adaptive_video_get_current_keyframe_ms();
 bool adaptive_video_is_on_lower_video_bitrate();
 

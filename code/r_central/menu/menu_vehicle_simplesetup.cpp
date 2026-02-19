@@ -487,7 +487,7 @@ void MenuVehicleSimpleSetup::addRadioItems()
       {
          if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] != iLink )
             continue;
-         if ( ! hardware_radio_type_is_ieee(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+         if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
             continue;
 
          int iCardModel = g_pCurrentModel->radioInterfacesParams.interface_card_model[i];
@@ -1028,7 +1028,7 @@ void MenuVehicleSimpleSetup::computeSendPowerToVehicle(int iVehicleLinkIndex)
 
       if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] != iVehicleLinkIndex )
          continue;
-      if ( ! hardware_radio_type_is_ieee(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+      if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
          continue;
 
       int iCardModel = g_pCurrentModel->radioInterfacesParams.interface_card_model[i];

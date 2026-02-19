@@ -173,5 +173,8 @@ bool is_vehicle_radio_link_used(Model* pModel, shared_mem_radio_stats* pSMRadioS
       if ( pSMRadioStats->radio_interfaces[i].assignedVehicleRadioLinkId == iVehicleRadioLinkIndex )
          return true;
    }
+   if ( pModel->relay_params.uRelayedVehicleId != 0 )
+   if ( pModel->relay_params.isRelayEnabledOnRadioLinkId == iVehicleRadioLinkIndex )
+      return true;
    return false;
 }

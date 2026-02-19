@@ -86,12 +86,17 @@ void video_sources_start_capture()
    log_line("[VideoSources] Current video profile max radio load: %d%%", g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].iDefaultLinkLoad);
    for( int i=0; i<g_pCurrentModel->radioLinksParams.links_count; i++ )
       log_line("[VideoSources] Current radio link %d max radio load: %d%%", i+1, g_pCurrentModel->radioLinksParams.uMaxLinkLoadPercent[i]);
-   if ( g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
+   if ( g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
    {
-      log_line("[VideoSources] Current model negociated radio links max supported legacy DR rate is: %s", str_format_datarate_inline(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedLegacyDataRate));
-      log_line("[VideoSources] Current model negociated radio links max supported MCS DR rate is: %s", str_format_datarate_inline(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate));
+      for( int i=0; i<g_pCurrentModel->radioInterfacesParams.interfaces_count; i++ )
+      {
+         if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i]) )
+            continue;
+         log_line("[VideoSources] Current model negociated radio interface %d max supported legacy DR rate is: %s", i+1, str_format_datarate_inline(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedLegacyDataRate[i]));
+         log_line("[VideoSources] Current model negociated radio interface %d max supported MCS DR rate is: %s", i+1, str_format_datarate_inline(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[i]));
+      }
       for( int i=0; i<g_pCurrentModel->radioLinksParams.links_count; i++ )
-         log_line("[VideoSources] Current model radio link %d modulation type: %s", i+1, (g_pCurrentModel->radioLinksParams.link_radio_flags[i] & RADIO_FLAGS_USE_MCS_DATARATES)?"MCS":"Legacy");
+         log_line("[VideoSources] Current model radio link %d modulation type: %s", i+1, (g_pCurrentModel->radioLinksParams.link_radio_flags_tx[i] & RADIO_FLAGS_USE_MCS_DATARATES)?"MCS":"Legacy");
 
       u32 uMaxVideoBitrate = g_pCurrentModel->getMaxVideoBitrateSupportedForCurrentRadioLinks();
       log_line("[VideoSources] Current model radio links max usable video bitrate: %.2f Mbps", (float)uMaxVideoBitrate/1000.0/1000.0);
@@ -99,13 +104,20 @@ void video_sources_start_capture()
    else
       log_line("[VideoSources] Current model has not negociated radio links yet.");
 
-   int iMaxMCS = g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate;
+   int iMaxMCS = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[0];
+   for( int i=0; i<g_pCurrentModel->radioInterfacesParams.interfaces_count; i++ )
+   {
+      if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i]) )
+         continue;
+      if ( g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[i] < iMaxMCS )
+         iMaxMCS = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[i];
+   }
    if ( iMaxMCS > -3 )
       iMaxMCS = -3;
    for( int i=-1; i>=iMaxMCS; i--)
    {
       u32 uMaxVideoBitrate = g_pCurrentModel->getMaxVideoBitrateForRadioDatarate(i, 0);
-      int iDRForMax = g_pCurrentModel->getRadioDataRateForVideoBitrate(uMaxVideoBitrate, 0, false);
+      int iDRForMax = g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(uMaxVideoBitrate, 0, false);
       char szTmp[64];
       str_getDataRateDescriptionNoSufix(iDRForMax, szTmp);
       log_line("[VideoSources] Max video bitrate on modulation %s is: %.2f Mbps of max %.1f Mbps (DR for it is %s)",
@@ -137,7 +149,7 @@ void video_sources_start_capture()
 
    signal_end_long_op();
 
-   log_line("[VideoSources] Started capture with video bitrate: %.1f Mbps, DR for it: %s", (float)s_uLastSetVideoBitrateBPS/1000.0/1000.0, str_format_datarate_inline(g_pCurrentModel->getRadioDataRateForVideoBitrate(s_uLastSetVideoBitrateBPS, 0, true)));
+   log_line("[VideoSources] Started capture with video bitrate: %.1f Mbps, DR for it: %s", (float)s_uLastSetVideoBitrateBPS/1000.0/1000.0, str_format_datarate_inline(g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(s_uLastSetVideoBitrateBPS, 0, true)));
    log_line("[VideoSources] Start capture completed.");
 }
 
@@ -225,9 +237,6 @@ bool video_sources_try_read_camera_frame(bool* pbOutEndOfFrameDetected)
    int iReadSize = 0;
    int iTotalBytes = 0;
    u32 uNALPresenceFlags = 0;
-
-static int s_iDbgReadTryCount = 0;
-s_iDbgReadTryCount++;
 
    if ( NULL != pbOutEndOfFrameDetected )
       *pbOutEndOfFrameDetected = false;

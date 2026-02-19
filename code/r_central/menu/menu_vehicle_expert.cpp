@@ -213,7 +213,7 @@ void MenuVehicleExpert::onSelectItem()
          if ( NULL != g_VehiclesRuntimeInfo[g_iCurrentActiveVehicleRuntimeInfoIndex].pModel )
             sprintf(szTextW, "Your %s is armed. Are you sure you want to reboot the controller?", g_VehiclesRuntimeInfo[g_iCurrentActiveVehicleRuntimeInfoIndex].pModel->getVehicleTypeString());
          MenuConfirmation* pMC = new MenuConfirmation("Warning! Reboot Confirmation", szTextW, 10);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          {
             pMC->addTopLine(" ");
             pMC->addTopLine("Warning: You have the RC link enabled, the vehicle flight controller might not go into failsafe mode during reboot.");

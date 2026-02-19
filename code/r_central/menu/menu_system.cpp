@@ -159,11 +159,6 @@ void MenuSystem::onReturnFromChild(int iChildMenuId, int returnValue)
       hw_execute_bash_command("mkdir -p config", NULL);
       hw_execute_bash_command("touch /home/radxa/ruby/config/firstboot.txt", NULL);
       #endif
-
-      char szBuff[128];
-      sprintf(szBuff, "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      hw_execute_bash_command(szBuff, NULL);
-
       hardware_reboot();
       return;
    }

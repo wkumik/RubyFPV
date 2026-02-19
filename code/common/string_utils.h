@@ -43,7 +43,8 @@ const char* str_get_radio_type_description(int iRadioType);
 const char* str_get_radio_driver_description(int iDriverType);
 const char* str_get_radio_card_model_string(int cardModel);
 const char* str_get_radio_card_model_string_short(int cardModel);
-void str_get_radio_capabilities_description(u32 flags, char* szOutput);
+void str_get_radio_capabilities_description(u32 uFlags, char* szOutput);
+char* str_get_radio_capabilities_description2(u32 uFlags);
 
 void str_get_radio_frame_flags_description(u32 radioFlags, char* szOutput);
 char* str_get_radio_frame_flags_description2(u32 radioFlags);

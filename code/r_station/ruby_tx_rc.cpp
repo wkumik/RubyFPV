@@ -68,11 +68,6 @@
 
 #define MAX_SERIAL_BUFFER_SIZE 512
 
-u32 g_iFPSFramesCount = 0;
-int g_iFPSMaxJoystickEvents = 0;
-int g_iFPSTotalJoystickEvents = 0;
-int g_iJoystickCheckFailureCount = 0;
-
 int s_fIPCFromRouter = -1;
 int s_fIPCToRouter = -1;
 
@@ -88,35 +83,47 @@ t_packet_header gPH;
 t_packet_header_rc_full_frame_upstream g_PHRCFUpstream;
 t_packet_header_rc_full_frame_upstream* s_pPHRCFUpstream = NULL;
 hw_joystick_info_t s_JoystickLocalInfo;
-hw_joystick_info_t* s_pJoystick = NULL;
+hw_joystick_info_t* s_pJoystickInfo = NULL;
 t_ControllerInputInterface* s_pCII = NULL;
 u16 s_ComputedRCValues[MAX_RC_CHANNELS];
+Model* g_pRCModel = NULL;
+bool g_bEnableRC = false;
 
 u32 s_uLastTimeStampRCInFrame = 0;
 u8 s_uLastFrameIndexRCIn = 0;
 u32 s_uTimeLastRCFrameSent = 0;
 u32 s_uTimeBetweenRCFramesOutput = 100000;
 
-void populate_rc_data( t_packet_header_rc_full_frame_upstream* pPHRCF )
+void populate_rc_data(Model* pModel, t_packet_header_rc_full_frame_upstream* pPHRCF)
 {
+   if ( NULL == pModel )
+      return;
    pPHRCF->rc_frame_index++;
-   for( int i=0; i<(int)(g_pCurrentModel->rc_params.channelsCount); i++ )
+   for( int i=0; i<(int)(pModel->rc_params.channelsCount); i++ )
    {
       packet_header_rc_full_set_rc_channel_value(pPHRCF, i, s_ComputedRCValues[i]);
    }
 }
 
-
-bool _check_open_joystick()
+void _close_joystick()
 {
-   if ( (NULL != s_pCII) && (NULL != s_pJoystick) && hardware_is_joystick_opened(s_pCII->currentHardwareIndex) )
-      return true;
+   if ( NULL != s_pCII )
+      hardware_close_joystick(s_pCII->currentHardwareIndex);
+   s_pCII = NULL;
+   s_pJoystickInfo = NULL;
+   log_line("Closed joystick.");
+}
 
-   if ( g_TimeNow < g_TimeLastJoystickCheck + 1000 + g_iJoystickCheckFailureCount*100 )
+bool _check_open_joystick(Model* pModel)
+{
+   if ( NULL == pModel )
+      return false;
+   if ( (NULL != s_pCII) && (NULL != s_pJoystickInfo) && hardware_is_joystick_opened(s_pCII->currentHardwareIndex) )
+      return true;
+   if ( g_TimeNow < g_TimeLastJoystickCheck + 1000 )
       return false;
 
    g_TimeLastJoystickCheck = g_TimeNow;
-   g_iJoystickCheckFailureCount++;
 
    ControllerInterfacesSettings* pCI = get_ControllerInterfacesSettings();
    controllerInterfacesEnumJoysticks();
@@ -126,33 +133,46 @@ bool _check_open_joystick()
    if ( 0 == pCI->inputInterfacesCount )
       return false;
 
+   s_pCII = NULL;
    for( int i=0; i<pCI->inputInterfacesCount; i++ )
    {
       t_ControllerInputInterface* pCII = controllerInterfacesGetAt(i);
       if ( NULL == pCII )
          continue;
-      if ( (NULL != g_pCurrentModel) && (pCII->uId == g_pCurrentModel->rc_params.hid_id) )
+      if ( pCII->uId == pModel->rc_params.hid_id )
       {
          s_pCII = controllerInterfacesGetAt(i);
          break;
       }
    }
-   if ( NULL != s_pCII )
-      s_pJoystick = hardware_get_joystick_info(s_pCII->currentHardwareIndex);
-   if ( NULL != s_pJoystick )
+   static int iCounterRCError = 0;
+   if ( NULL == s_pCII )
    {
-      if ( 0 == hardware_open_joystick(s_pCII->currentHardwareIndex) )
-         s_pJoystick = NULL;
+      iCounterRCError++;
+      if ( (iCounterRCError % 3) == 1 )
+         log_softerror_and_alarm("Failed to find RC input device HID id: %u", pModel->rc_params.hid_id);
+      return false;
    }
 
-   if ( (NULL != s_pJoystick) && (NULL != s_pCII) )
+   s_pJoystickInfo = hardware_get_joystick_info(s_pCII->currentHardwareIndex);
+   if ( NULL != s_pJoystickInfo )
+   {
+      if ( 0 == hardware_open_joystick(s_pCII->currentHardwareIndex) )
+         s_pJoystickInfo = NULL;
+   }
+
+   if ( (NULL != s_pJoystickInfo) && (NULL != s_pCII) )
+   {
+      log_line("Opened joystick.");
       return true;
+   }
+   log_softerror_and_alarm("Failed to open joystick.");
    return false;
 }
 
-bool handle_joysticks()
+bool handle_joysticks(Model* pModel)
 {
-   if ( ! _check_open_joystick() )
+   if ( ! _check_open_joystick(pModel) )
       return false;
    
    int countEvents = hardware_read_joystick(s_pCII->currentHardwareIndex, 5);
@@ -163,19 +183,68 @@ bool handle_joysticks()
       return false;
    }
 
-   g_iJoystickCheckFailureCount = 0;
-   g_iFPSTotalJoystickEvents += countEvents;
-   if ( countEvents > g_iFPSMaxJoystickEvents )
-      g_iFPSMaxJoystickEvents = countEvents;
-
-   memcpy(&s_JoystickLocalInfo, s_pJoystick, sizeof(hw_joystick_info_t));
+   memcpy(&s_JoystickLocalInfo, s_pJoystickInfo, sizeof(hw_joystick_info_t));
    return true;
+}
+
+void _check_update_rc_state()
+{
+   g_pRCModel = g_pCurrentModel;
+   g_bEnableRC = false;
+   g_TimeLastJoystickCheck = 0;
+
+   #if defined (FEATURE_ENABLE_RC)
+   if ( (NULL != g_pCurrentModel) && (! g_bSearching) && (! g_pCurrentModel->is_spectator) )
+   {
+      log_line("RC is enabled on current model? %s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?"Yes":"No");
+      log_line("Relay is enabled on current model? %s", ((g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId >= 0) && (g_pCurrentModel->relay_params.uRelayedVehicleId != 0))?"Yes":"No");
+      if ( (g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId >= 0) && (g_pCurrentModel->relay_params.uRelayedVehicleId != 0) )
+      {
+         Model* pRelayedModel = findModelWithId(g_pCurrentModel->relay_params.uRelayedVehicleId, 48);
+         if ( NULL == pRelayedModel )
+            log_softerror_and_alarm("Can't find local model for relayed vehicle id: %u", g_pCurrentModel->relay_params.uRelayedVehicleId);
+         else if ( ! (pRelayedModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
+            log_line("RC is not enabled on relayed VID %u", pRelayedModel->uVehicleId);
+         else if ( 0 == pRelayedModel->rc_params.inputType )
+            log_line("RC is not configured on relayed VID %u", pRelayedModel->uVehicleId);
+         else if ( pRelayedModel->rc_params.rc_frames_per_second > 0 )
+         {
+            s_uTimeBetweenRCFramesOutput = 1000/pRelayedModel->rc_params.rc_frames_per_second;
+            g_bEnableRC = true;
+            g_pRCModel = pRelayedModel;
+         }
+      }
+      else
+      {
+         if ( ! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
+            log_line("RC is not enabled on current VID %u", g_pCurrentModel->uVehicleId);
+         else if ( 0 == g_pCurrentModel->rc_params.inputType )
+            log_line("RC is not configured on current VID %u", g_pCurrentModel->uVehicleId);
+         else if ( g_pCurrentModel->rc_params.rc_frames_per_second > 0 )
+         {
+            s_uTimeBetweenRCFramesOutput = 1000/g_pCurrentModel->rc_params.rc_frames_per_second;
+            g_bEnableRC = true;
+         }
+      }
+   }
+   #endif
+
+   if ( ! g_bEnableRC )
+      log_line("RC is not active.");
+   else
+   {
+      log_line("RC is active, using a RC rate of %d packets/sec, %u ms between packets", 1000/s_uTimeBetweenRCFramesOutput, s_uTimeBetweenRCFramesOutput);
+      log_line("RC input type: %d", g_pRCModel->rc_params.inputType);
+      log_line("RC input HID id: %u", g_pRCModel->rc_params.hid_id);
+   }
+   if ( g_bEnableRC && (g_pRCModel->rc_params.inputType == RC_INPUT_TYPE_USB) )
+      controllerInterfacesEnumJoysticks();
 }
 
 
 void try_read_pipes()
 {
-   int maxMsgToRead = 5;
+   int maxMsgToRead = 10;
 
    while ( (maxMsgToRead > 0) && (NULL != ruby_ipc_try_read_message(s_fIPCFromRouter, s_PipeBufferFromRouter, &s_PipeBufferFromRouterPos, s_BufferRCDownlink)) )
    {
@@ -188,34 +257,33 @@ void try_read_pipes()
 
       if ( (pPH->packet_flags & PACKET_FLAGS_MASK_MODULE) == PACKET_COMPONENT_LOCAL_CONTROL )
       {
-            if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROL_MODEL_CHANGED )
-            if ( pPH->vehicle_id_src != PACKET_COMPONENT_RC )
+         if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROL_MODEL_CHANGED )
+         if ( pPH->vehicle_id_src != PACKET_COMPONENT_RC )
+         {
+            log_line("Received message to reload model.");
+            reloadCurrentModel();
+            u8 uChangeType = (pPH->vehicle_id_src >> 8) & 0xFF;
+            if ( uChangeType == MODEL_CHANGED_SYNCHRONISED_SETTINGS_FROM_VEHICLE )
             {
-               log_line("Received message to reload model.");
-               reloadCurrentModel();
-               u8 uChangeType = (pPH->vehicle_id_src >> 8) & 0xFF;
-               if ( uChangeType == MODEL_CHANGED_SYNCHRONISED_SETTINGS_FROM_VEHICLE )
-               {
-                  g_pCurrentModel->b_mustSyncFromVehicle = false;
-                  log_line("Model settings where synchronized from vehicle. Reset model must sync flag.");
-               }
-               if ( uChangeType == MODEL_CHANGED_RC_PARAMS )
-                  log_line("RC parameters have changed. Updating local model.");
-               
-               if ( NULL != g_pCurrentModel )
-               {
-                  log_line("RC is enabled: %s", g_pCurrentModel->rc_params.rc_enabled?"yes":"no");
-                  s_uTimeBetweenRCFramesOutput = 1000/g_pCurrentModel->rc_params.rc_frames_per_second;
-                  log_line("Using a RC rate of %d packets/sec, %u ms between packets", g_pCurrentModel->rc_params.rc_frames_per_second, s_uTimeBetweenRCFramesOutput);
-               }
-               load_ControllerInterfacesSettings();
+               g_pCurrentModel->b_mustSyncFromVehicle = false;
+               log_line("Model settings where synchronized from vehicle. Reset model must sync flag.");
             }
-            if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROL_CONTROLLER_CHANGED )
-            if ( pPH->vehicle_id_src != PACKET_COMPONENT_RC )
-            {
-               load_ControllerInterfacesSettings();
-               load_ControllerSettings();
-            }
+            if ( uChangeType == MODEL_CHANGED_RC_PARAMS )
+               log_line("RC parameters have changed. Updating local model.");
+            if ( uChangeType == MODEL_CHANGED_RELAY_PARAMS )
+               log_line("Relay parameters have changed. Updating local model.");
+            _check_update_rc_state();
+            _close_joystick();
+            load_ControllerInterfacesSettings();
+         }
+         if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROL_CONTROLLER_CHANGED )
+         if ( pPH->vehicle_id_src != PACKET_COMPONENT_RC )
+         {
+            _close_joystick();
+            load_ControllerInterfacesSettings();
+            load_ControllerSettings();
+         }
+         log_line("Finished processing local packet: %s", str_get_packet_type(pPH->packet_type));
       }
 
       if ( (pPH->packet_flags & PACKET_FLAGS_MASK_MODULE) == PACKET_COMPONENT_LOCAL_CONTROL )
@@ -263,7 +331,7 @@ int main(int argc, char *argv[])
       return 0;
    }
    
-   log_init("TX RC");
+   log_init("TXRC");
 
    hardware_detectBoardAndSystemType();
 
@@ -283,6 +351,8 @@ int main(int argc, char *argv[])
    load_ControllerInterfacesSettings();
    load_ControllerSettings();
    ControllerSettings* pCS = get_ControllerSettings();
+   g_uControllerId = controller_utils_getControllerId();
+
 
    if ( pCS->iCoresAdjustment )
       hw_set_current_thread_affinity("rc_tx", CORE_AFFINITY_RC_TX, CORE_AFFINITY_RC_TX);
@@ -306,35 +376,13 @@ int main(int argc, char *argv[])
    else
       log_line("Opened shared mem for RC tx process watchdog stats for writing.");
  
-   s_uTimeBetweenRCFramesOutput = 100000;
-   if ( NULL != g_pCurrentModel )
-   {
-      log_line("RC is enabled: %s", g_pCurrentModel->rc_params.rc_enabled?"yes":"no");
-      s_uTimeBetweenRCFramesOutput = 1000/g_pCurrentModel->rc_params.rc_frames_per_second;
-      log_line("Using a RC rate of %d packets/sec, %u ms between packets", g_pCurrentModel->rc_params.rc_frames_per_second, s_uTimeBetweenRCFramesOutput);
-   }
-   else
-      log_line("No model. RC is inactive.");
+   s_uTimeBetweenRCFramesOutput = 50;
+   gPH.vehicle_id_src = 0;
+   gPH.vehicle_id_dest = 0;
 
-   if ( ! g_bSearching )
-      controllerInterfacesEnumJoysticks();
-
-   g_uControllerId = controller_utils_getControllerId();
-
-   log_line("Started all ok. Running now.");
-   log_line("--------------------------------");
+   _check_update_rc_state();
 
    gPH.stream_packet_idx = (STREAM_ID_DATA) << PACKET_FLAGS_MASK_SHIFT_STREAM_INDEX;
-   if ( NULL != g_pCurrentModel )
-   {
-      gPH.vehicle_id_src = g_pCurrentModel->uVehicleId;
-      gPH.vehicle_id_dest = g_pCurrentModel->uVehicleId;
-   }
-   else
-   {
-      gPH.vehicle_id_src = 0;
-      gPH.vehicle_id_dest = 0;
-   }
    g_PHRCFUpstream.rc_frame_index = 0;
    g_PHRCFUpstream.flags = 0;
    for( int i=0; i<MAX_RC_CHANNELS; i++ )
@@ -346,52 +394,39 @@ int main(int argc, char *argv[])
    if ( NULL != s_pPHRCFUpstream )
       memcpy(s_pPHRCFUpstream, &g_PHRCFUpstream, sizeof(t_packet_header_rc_full_frame_upstream) );
 
-   g_TimeStart = get_current_timestamp_ms(); 
+   u32 uTimeComputeRCFPS = get_current_timestamp_ms();
+   u32 uTempRCFrames = 0;
 
-   int iSleepTime = 50;
-   #ifdef FEATURE_ENABLE_RC
-   iSleepTime = 10;
-   #endif
+   log_line("Started all ok. Running now.");
+   log_line("--------------------------------");
+
+   g_TimeStart = get_current_timestamp_ms(); 
 
    while ( !g_bQuit )
    { 
-      g_iFPSFramesCount++;
-      hardware_sleep_ms(iSleepTime);
+      u32 uTimeNow = get_current_timestamp_ms();
+      u32 uTimeToSleep = uTimeNow - g_TimeNow;
+      if ( uTimeToSleep >= s_uTimeBetweenRCFramesOutput )
+         uTimeToSleep = 0;
+      else
+         uTimeToSleep = s_uTimeBetweenRCFramesOutput - uTimeToSleep;
+      if ( uTimeToSleep > 0 )
+         hardware_sleep_ms(uTimeToSleep);
 
       g_uLoopCounter++;
       g_TimeNow = get_current_timestamp_ms();
-      u32 tTime0 = g_TimeNow;
+
       if ( NULL != s_pProcessStats )
       {
          s_pProcessStats->uLoopCounter++;
          s_pProcessStats->lastActiveTime = g_TimeNow;
       }
 
-      if ( g_TimeNow > g_TimeLastFPSCalculation + 1000 )
-      {
-         //log_line("FPS: %d; Average joystick events: %d, max joystick events: %d", g_iFPSFramesCount, g_iFPSTotalJoystickEvents/g_iFPSFramesCount, g_iFPSMaxJoystickEvents );
-         g_TimeLastFPSCalculation = g_TimeNow;
-         g_iFPSFramesCount = 0;
-         g_iFPSMaxJoystickEvents = 0;
-         g_iFPSTotalJoystickEvents = 0;
-      }
+      try_read_pipes();
 
-      if ( (g_pCurrentModel->rc_params.rc_enabled && (!g_pCurrentModel->is_spectator)) || ((g_iFPSFramesCount % 3) == 0) )
-         try_read_pipes();
-
-      if ( g_bSearching || g_bUpdateInProgress )
+      if ( (!g_bEnableRC) || g_bUpdateInProgress )
       {
-         _update_loop_info(tTime0);
-         continue;
-      }
-      if ( NULL == g_pCurrentModel )
-      {
-         _update_loop_info(tTime0);
-         continue;
-      }
-      if ( (! g_pCurrentModel->rc_params.rc_enabled) || g_pCurrentModel->is_spectator )
-      {
-         _update_loop_info(tTime0);
+         _update_loop_info(g_TimeNow);
          continue;
       }
    
@@ -399,29 +434,24 @@ int main(int argc, char *argv[])
 
       if ( g_TimeNow < s_uTimeLastRCFrameSent + s_uTimeBetweenRCFramesOutput )
       {
-         _update_loop_info(tTime0);
-
-         u32 uDelta = s_uTimeLastRCFrameSent + s_uTimeBetweenRCFramesOutput - g_TimeNow;
-         if ( uDelta > 40 )
-            uDelta = 40;
-         hardware_sleep_ms(uDelta/2);
+         _update_loop_info(g_TimeNow);
          continue;
       }
 
       u32 miliSec = g_TimeNow - s_uTimeLastRCFrameSent;
 
-      if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_USB )
+      if ( g_pRCModel->rc_params.inputType == RC_INPUT_TYPE_USB )
       {
-         if ( handle_joysticks() )
+         if ( handle_joysticks(g_pRCModel) )
             g_PHRCFUpstream.flags |= RC_FULL_FRAME_FLAGS_HAS_INPUT;
          else
             g_PHRCFUpstream.flags &= (~RC_FULL_FRAME_FLAGS_HAS_INPUT);
 
-         for( int i=0; i<(int)(g_pCurrentModel->rc_params.channelsCount); i++ )
-            s_ComputedRCValues[i] = (u16) compute_controller_rc_value(g_pCurrentModel, i, (float)(s_ComputedRCValues[i]), NULL, &s_JoystickLocalInfo, s_pCII, miliSec);
+         for( int i=0; i<(int)(g_pRCModel->rc_params.channelsCount); i++ )
+            s_ComputedRCValues[i] = (u16) compute_controller_rc_value(g_pRCModel, i, (int)(s_ComputedRCValues[i]), NULL, &s_JoystickLocalInfo, s_pCII, miliSec);
       }
 
-      if ( g_pCurrentModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
+      if ( g_pRCModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
       {
          g_PHRCFUpstream.flags &= (~RC_FULL_FRAME_FLAGS_HAS_INPUT);
 
@@ -435,46 +465,55 @@ int main(int argc, char *argv[])
             {
                s_uLastTimeStampRCInFrame = s_pSM_RCIn->uTimeStamp;
                s_uLastFrameIndexRCIn = s_pSM_RCIn->uFrameIndex;
-               int nCh = g_pCurrentModel->rc_params.channelsCount;
+               int nCh = g_pRCModel->rc_params.channelsCount;
                if ( nCh > (int)(s_pSM_RCIn->uChannelsCount) )
                   nCh = (int)(s_pSM_RCIn->uChannelsCount);
                for( int i=0; i<nCh; i++ )
                {
                   //s_ComputedRCValues[i] = s_pSM_RCIn->uChannels[i];
-                  s_ComputedRCValues[i] = compute_controller_rc_value(g_pCurrentModel, i, (float)(s_ComputedRCValues[i]), NULL, NULL, NULL, miliSec);
+                  s_ComputedRCValues[i] = compute_controller_rc_value(g_pRCModel, i, (int)(s_ComputedRCValues[i]), NULL, NULL, NULL, miliSec);
                }
                //log_line("%d %d %d", s_pSM_RCIn->uChannels[0], s_pSM_RCIn->uChannels[1], s_pSM_RCIn->uChannels[2] );
             }
          }
 
-         if ( s_uLastTimeStampRCInFrame + g_pCurrentModel->rc_params.rc_failsafe_timeout_ms < g_TimeNow )
+         if ( s_uLastTimeStampRCInFrame + g_pRCModel->rc_params.rc_failsafe_timeout_ms < g_TimeNow )
             g_PHRCFUpstream.flags &= ~RC_FULL_FRAME_FLAGS_HAS_INPUT;
       }
 
       s_uTimeLastRCFrameSent = g_TimeNow;
 
-      populate_rc_data(&g_PHRCFUpstream);
+      populate_rc_data(g_pRCModel, &g_PHRCFUpstream);
 
       if ( NULL != s_pPHRCFUpstream )
          memcpy(s_pPHRCFUpstream, &g_PHRCFUpstream, sizeof(t_packet_header_rc_full_frame_upstream) );
 
       radio_packet_init(&gPH, PACKET_COMPONENT_RC, PACKET_TYPE_RC_FULL_FRAME, STREAM_ID_DATA);
-      gPH.vehicle_id_src = g_uControllerId;
-      gPH.vehicle_id_dest = g_pCurrentModel->uVehicleId;
       gPH.total_length = sizeof(t_packet_header)+sizeof(t_packet_header_rc_full_frame_upstream);
+      gPH.vehicle_id_src = g_uControllerId;
+      gPH.vehicle_id_dest = g_pRCModel->uVehicleId;
       
       u8 buffer[MAX_PACKET_TOTAL_SIZE];
       memcpy(buffer, &gPH, sizeof(t_packet_header));
       memcpy(buffer+sizeof(t_packet_header), (u8*)&g_PHRCFUpstream, sizeof(t_packet_header_rc_full_frame_upstream));
       radio_packet_compute_crc(buffer, gPH.total_length);
       ruby_ipc_channel_send_message(s_fIPCToRouter, buffer, gPH.total_length);
+
+      uTempRCFrames++;
+      if ( g_TimeNow >= uTimeComputeRCFPS + 2000 )
+      {
+         log_line("Generated %u RC frames/sec", (uTempRCFrames * 1000) / (g_TimeNow - uTimeComputeRCFPS));
+         uTimeComputeRCFPS = g_TimeNow;
+         uTempRCFrames = 0;
+      }
       #endif
 
-      _update_loop_info(tTime0);
+      _update_loop_info(g_TimeNow);
    }
 
    if ( NULL != s_pCII )
       hardware_close_joystick(s_pCII->currentHardwareIndex);
+   hardware_uninit_joysticks();
 
    ruby_close_ipc_channel(s_fIPCFromRouter);
    ruby_close_ipc_channel(s_fIPCToRouter);

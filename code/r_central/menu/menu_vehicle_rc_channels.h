@@ -59,7 +59,7 @@ class MenuVehicleRCChannels: public Menu
 
       int m_JoystickIndex;
       t_ControllerInputInterface* m_pJoystick;
-      float m_CurrentRCValues[MAX_RC_CHANNELS];
+      int m_CurrentRCValues[MAX_RC_CHANNELS];
       u32 m_TimeLastRCCompute;
       int m_ButtonsBeforeAssign[MAX_JOYSTICK_BUTTONS];
       int m_AxesBeforeAssign[MAX_JOYSTICK_BUTTONS];

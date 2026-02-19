@@ -217,10 +217,6 @@ void do_first_boot_initialization(bool bIsVehicle, u32 uBoardType)
 
    char szBuff[256];
    char szFile[MAX_FILE_PATH_SIZE];
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-   sprintf(szComm, "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-   hw_execute_bash_command(szComm, szBuff);
 
    first_boot_create_default_model(bIsVehicle, uBoardType);
 
@@ -422,9 +418,12 @@ Model* first_boot_create_default_model(bool bIsVehicle, u32 uBoardType)
       s_ModelFirstBoot.radioInterfacesParams.interface_capabilities_flags[0] = RADIO_HW_CAPABILITY_FLAG_CAN_RX | RADIO_HW_CAPABILITY_FLAG_CAN_TX;
       s_ModelFirstBoot.radioInterfacesParams.interface_capabilities_flags[0] |= RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_VIDEO | RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_DATA;
 
-      s_ModelFirstBoot.radioLinksParams.link_radio_flags[0] = DEFAULT_RADIO_FRAMES_FLAGS;
+      s_ModelFirstBoot.radioLinksParams.link_radio_flags_tx[0] = DEFAULT_RADIO_FRAMES_FLAGS;
+      s_ModelFirstBoot.radioLinksParams.link_radio_flags_rx[0] = DEFAULT_RADIO_FRAMES_FLAGS;
       s_ModelFirstBoot.radioLinksParams.downlink_datarate_video_bps[0] = DEFAULT_RADIO_DATARATE_VIDEO;
       s_ModelFirstBoot.radioLinksParams.downlink_datarate_data_bps[0] = DEFAULT_RADIO_DATARATE_DATA;
+      s_ModelFirstBoot.radioLinksParams.uplink_datarate_video_bps[0] = DEFAULT_RADIO_DATARATE_VIDEO;
+      s_ModelFirstBoot.radioLinksParams.uplink_datarate_data_bps[0] = DEFAULT_RADIO_DATARATE_DATA;
 
       s_ModelFirstBoot.populateRadioInterfacesInfoFromHardware();
 

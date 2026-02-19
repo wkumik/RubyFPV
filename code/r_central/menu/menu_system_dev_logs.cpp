@@ -106,13 +106,7 @@ void MenuSystemDevLogs::valuesToUI()
 {
    Preferences* pP = get_Preferences();
 
-   char szFile[128];
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-   if ( access(szFile, R_OK) != -1 )
-      m_pItemsSelect[0]->setSelectedIndex(1);
-   else
-      m_pItemsSelect[0]->setSelectedIndex(0);
+   m_pItemsSelect[0]->setSelectedIndex(1);
          
    if ( NULL == g_pCurrentModel )
    {
@@ -309,12 +303,6 @@ void MenuSystemDevLogs::onSelectItem()
 
    if ( m_IndexLogServiceController == m_SelectedIndex )
    {
-      char szBuff[128];
-      if ( 0 == m_pItemsSelect[0]->getSelectedIndex() )
-         sprintf(szBuff, "rm -rf %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      else
-         sprintf(szBuff, "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      hw_execute_bash_command(szBuff, NULL);
       return;
    }
 

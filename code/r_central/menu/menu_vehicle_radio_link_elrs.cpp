@@ -181,7 +181,7 @@ void MenuVehicleRadioLinkELRS::sendRadioLinkFlags(int linkIndex)
    if ( linkIndex < 0 || linkIndex >= g_pCurrentModel->radioLinksParams.links_count )
       return;
 
-   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex];
+   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex];
    int datarate_bps = 0;
 
    int indexRate = m_pItemsSelect[2]->getSelectedIndex();
@@ -203,7 +203,7 @@ void MenuVehicleRadioLinkELRS::sendRadioLinkFlags(int linkIndex)
  
    memcpy(&g_LastGoodRadioLinksParams, &(g_pCurrentModel->radioLinksParams), sizeof(type_radio_links_parameters));
 
-   g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex] = uRadioFlags;
+   g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex] = uRadioFlags;
    g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[linkIndex] = datarate_bps;
    g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[linkIndex] = datarate_bps;
    g_pCurrentModel->validateRadioSettings();

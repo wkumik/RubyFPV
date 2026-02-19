@@ -1664,7 +1664,7 @@ int _process_received_message_from_router(u8* pPacketBuffer)
       return 0;
    }
 
-   if ( pPH->packet_type == PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED )
+   if ( pPH->packet_type == PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG )
    {
       log_line("Received current radio configuration from vehicle VID %u, packet size: %d bytes.", pPH->vehicle_id_src, pPH->total_length);
 
@@ -1680,28 +1680,45 @@ int _process_received_message_from_router(u8* pPacketBuffer)
          log_softerror_and_alarm("There is no current vehicle. Ignore this vehicle radio configuration update.");
          return 0;
       }
-      if ( ! is_sw_version_atleast(pModel, 11, 7) )
-      {
-         log_line("Vehicle SW version is too old (%d.%d). Ignore this vehicle radio config update.", get_sw_version_major(pModel), get_sw_version_minor(pModel));
-         return 0;
-      }
 
-      if ( pPH->total_length < (sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters)) )
-      {
-         log_softerror_and_alarm("Received current radio configuration: invalid packet size. Ignoring.");
-         return 0;
-      }
+      u8 uType = pPacketBuffer[sizeof(t_packet_header)];
+      type_relay_parameters relayParams;
+      type_radio_interfaces_parameters radioInt;
+      type_radio_links_parameters radioLinks;
+      type_radio_interfaces_runtime_capabilities_parameters runtimeCapabParams;
+
       bool bChanged = false;
-      if ( 0 != memcmp(&(pModel->relay_params), pPacketBuffer + sizeof(t_packet_header), sizeof(type_relay_parameters)) )
-         bChanged = true;
-      if ( 0 != memcmp(&(pModel->radioInterfacesParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters)) )
-         bChanged = true;
-      if ( 0 != memcmp(&(pModel->radioLinksParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters)) )
-         bChanged = true;
 
-      if ( pPH->total_length >= (sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters) + sizeof(type_radio_runtime_capabilities_parameters)) )
-      if ( 0 != memcmp(&(pModel->radioRuntimeCapabilities), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters), sizeof(type_radio_runtime_capabilities_parameters)) )
-         bChanged = true;
+      if ( 0 == uType )
+      {
+         if ( pPH->total_length != (int)(sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters)) )
+         {
+            log_softerror_and_alarm("Received vehicle's current radio configuration: invalid packet size. Ignoring.");
+            return 0;
+         }
+         memcpy(&relayParams, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8), sizeof(type_relay_parameters));
+         memcpy(&radioInt, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters));
+         memcpy(&radioLinks, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters));
+
+         if ( 0 != memcmp(&(pModel->relay_params), &relayParams, sizeof(type_relay_parameters)) )
+            bChanged = true;
+         if ( 0 != memcmp(&(pModel->radioInterfacesParams), &radioInt, sizeof(type_radio_interfaces_parameters)) )
+            bChanged = true;
+         if ( 0 != memcmp(&(pModel->radioLinksParams), &radioLinks, sizeof(type_radio_links_parameters)) )
+            bChanged = true;
+
+      }
+      if ( 1 == uType )
+      {
+         if ( pPH->total_length != (int)(sizeof(t_packet_header) + sizeof(u8) + sizeof(type_radio_interfaces_runtime_capabilities_parameters)) )
+         {
+            log_softerror_and_alarm("Received vehicle's current radio configuration: invalid packet size. Ignoring.");
+            return 0;
+         }
+         memcpy(&runtimeCapabParams, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8), sizeof(type_radio_interfaces_runtime_capabilities_parameters));
+         if ( 0 != memcmp(&pModel->radioInterfacesRuntimeCapab, &runtimeCapabParams, sizeof(type_radio_interfaces_runtime_capabilities_parameters)) )
+            bChanged = true;
+      }
 
       if ( g_bDidAnUpdate && (g_nSucceededOTAUpdates > 0) )
          g_bLinkWizardAfterUpdate = true;
@@ -1711,20 +1728,23 @@ int _process_received_message_from_router(u8* pPacketBuffer)
       if ( bChanged )
       {
          log_line("Radio configuration has changed on the vehicle.");
-         memcpy(&(pModel->relay_params), pPacketBuffer + sizeof(t_packet_header), sizeof(type_relay_parameters));
-         memcpy(&(pModel->radioInterfacesParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters));
-         memcpy(&(pModel->radioLinksParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters));
-
-         if ( pPH->total_length >= (sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters) + sizeof(type_radio_runtime_capabilities_parameters)) )
-            memcpy(&pModel->radioRuntimeCapabilities, pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters), sizeof(type_radio_runtime_capabilities_parameters));
+         if ( 0 == uType )
+         {
+            memcpy(&(pModel->relay_params), &relayParams, sizeof(type_relay_parameters));
+            memcpy(&(pModel->radioInterfacesParams), &radioInt, sizeof(type_radio_interfaces_parameters));
+            memcpy(&(pModel->radioLinksParams), &radioLinks, sizeof(type_radio_links_parameters));
+         }
+         if ( 1 == uType )
+            memcpy(&pModel->radioInterfacesRuntimeCapab, &runtimeCapabParams, sizeof(type_radio_interfaces_runtime_capabilities_parameters));
 
          pModel->validateRadioSettings();
-         
+         saveControllerModel(pModel);
          warnings_add(pPH->vehicle_id_src, "Radio configuration has changed on the vehicle. Updating controller radio configuration.", g_idIconRadio);
          hardware_load_radio_info();
       }
       else
          log_line("Received new radio configuration from vehicle is the same as old one, nothing to do, ignoring it.");
+      return 0;
    }
    return 0;
 }

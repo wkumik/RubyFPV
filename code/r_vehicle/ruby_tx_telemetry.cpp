@@ -577,7 +577,10 @@ void onRebootRequest(bool bSaveModelToo)
       log_line("Do not save model before rebooting.");
    hardware_sleep_ms(200);
    log_line("Will reboot now.");
-   hardware_reboot();
+   if ( access("/tmp/noreboot", R_OK) != -1 )
+      log_line("DBG no reboot");
+   else
+      hardware_reboot();
 }
 
 
@@ -910,7 +913,7 @@ void check_send_telemetry_to_controller()
          sPHRTE.uRubyFlags &= ~(FLAG_RUBY_TELEMETRY_HAS_VEHICLE_TELEMETRY_DATA);
 
       #ifdef FEATURE_ENABLE_RC
-      if ( g_pCurrentModel->rc_params.rc_enabled && NULL != s_pPHDownstreamInfoRC )
+      if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (NULL != s_pPHDownstreamInfoRC) )
       {
          if ( s_pPHDownstreamInfoRC->is_failsafe )
             sPHRTE.uRubyFlags |= FLAG_RUBY_TELEMETRY_RC_FAILSAFE;
@@ -1182,13 +1185,18 @@ void check_send_telemetry_to_controller()
 
    // FC RC channels and RC extra packets are sent at the same rate as Ruby telemetry
 
+   bool bAddRCInfo = false;
+
+   #ifdef FEATURE_ENABLE_RC
+   if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (NULL != s_pPHDownstreamInfoRC) )
+   if ( s_bSendRCInfoBack )
+      bAddRCInfo = true;
+   #endif
+
    // ---------------------------------
    // Send FC RC Channels
 
-   if ( g_pCurrentModel->osd_params.show_stats_rc ||
-       (g_pCurrentModel->osd_params.osd_flags[g_pCurrentModel->osd_params.iCurrentOSDScreen] & OSD_FLAG_SHOW_HID_IN_OSD) ||
-       (g_pCurrentModel->osd_params.osd_flags2[g_pCurrentModel->osd_params.iCurrentOSDScreen] & OSD_FLAG2_SHOW_STATS_RC)
-      )
+   if ( bAddRCInfo )
    if ( g_bRouterReady && (! g_bLongTaskStarted) && (! s_bRadioInterfacesReinitIsInProgress) )
    {
       radio_packet_init(&sPH, PACKET_COMPONENT_TELEMETRY, PACKET_TYPE_FC_RC_CHANNELS, STREAM_ID_TELEMETRY);
@@ -1228,15 +1236,8 @@ void check_send_telemetry_to_controller()
    // ----------------------------------
    // Send RC downlink info packet
 
-   bool bAddRCInfo = false;
-
-   #ifdef FEATURE_ENABLE_RC
-   if ( g_pCurrentModel->rc_params.rc_enabled && NULL != s_pPHDownstreamInfoRC )
-   if ( s_bSendRCInfoBack )
-      bAddRCInfo = true;
-   #endif
-
    if ( bAddRCInfo )
+   if ( g_bRouterReady && (! g_bLongTaskStarted) && (! s_bRadioInterfacesReinitIsInProgress) )
    {
       radio_packet_init(&sPH, PACKET_COMPONENT_TELEMETRY, PACKET_TYPE_RC_TELEMETRY, STREAM_ID_TELEMETRY);
       sPH.vehicle_id_src = g_pCurrentModel->uVehicleId;
@@ -1598,7 +1599,7 @@ void _main_loop()
       
       try_read_serial_datalink();
 
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
       if ( NULL == s_pPHDownstreamInfoRC )
       {
          #ifdef FEATURE_ENABLE_RC
@@ -1615,8 +1616,8 @@ void _main_loop()
          maxMsgToRead--;
 
       if ( g_pCurrentModel->telemetry_params.fc_telemetry_type == TELEMETRY_TYPE_MAVLINK )
-      if ( g_pCurrentModel->rc_params.rc_enabled && g_bReceivedPairingRequest )
-      if ( g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED )
+      if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && g_bReceivedPairingRequest )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED )
       {
          if ( iSleepTime > 10 )
             iSleepTime = 10;

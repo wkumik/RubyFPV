@@ -1241,7 +1241,7 @@ void MenuRadioConfig::drawOneRadioLinkCapabilities(float xStart, float xEnd, flo
    }
 
    bool bUsesHT40 = false;
-   if ( g_pCurrentModel->radioLinksParams.link_radio_flags[iVehicleRadioLink] & RADIO_FLAG_HT40_VEHICLE )
+   if ( g_pCurrentModel->radioLinksParams.link_radio_flags_tx[iVehicleRadioLink] & RADIO_FLAG_HT40 )
       bUsesHT40 = true;
    str_getDataRateDescription(g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[iVehicleRadioLink], bUsesHT40, szDRVideo);
    str_getDataRateDescription(g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[iVehicleRadioLink], bUsesHT40, szDRDataDown);

@@ -859,8 +859,6 @@ bool process_command(u8* pBuffer, int length)
       }
       snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "touch %s%s", FOLDER_CONFIG, FILE_CONFIG_FIRST_BOOT);
       hw_execute_bash_command(szComm, NULL);
-      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      hw_execute_bash_command(szComm, NULL);
       hardware_sleep_ms(50);
 
       if ( 0 < strlen(FOLDER_LOGS) )
@@ -2110,25 +2108,6 @@ bool process_command(u8* pBuffer, int length)
       if ( g_pCurrentModel->uModelFlags & MODEL_FLAG_DISABLE_ALL_LOGS )
          bHadServiceLog = false;
       g_pCurrentModel->uModelFlags = pPHC->command_param;
-      if ( (g_pCurrentModel->uModelFlags & MODEL_FLAG_USE_LOGER_SERVICE) && ! (g_pCurrentModel->uModelFlags & MODEL_FLAG_DISABLE_ALL_LOGS) )
-      {
-         if ( ! bHadServiceLog )
-         {
-            char szC[128];
-            sprintf(szC, "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-            hw_execute_bash_command(szC,NULL);
-         }
-      }
-      else
-      {
-         if ( bHadServiceLog )
-         {
-            char szC[128];
-            sprintf(szC, "rm -rf %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-            hw_execute_bash_command(szC,NULL);
-         }
-      }
-
       saveCurrentModel();
       signalReloadModel(0, 0);
       return true;
@@ -2203,8 +2182,10 @@ bool process_command(u8* pBuffer, int length)
       }
 
       char szBuffR[256];
-      str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex], szBuffR); 
-      log_line("Current radio link flags for radio link %d: %s, datarates: %d/%d", (int)linkIndex+1, szBuffR, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[linkIndex], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[linkIndex]);
+      str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex], szBuffR); 
+      log_line("Current radio link tx flags for radio link %d: %s, downlink datarates: %d/%d", (int)linkIndex+1, szBuffR, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[linkIndex], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[linkIndex]);
+      str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_rx[linkIndex], szBuffR); 
+      log_line("Current radio link rx flags for radio link %d: %s, uplink datarates: %d/%d", (int)linkIndex+1, szBuffR, g_pCurrentModel->radioLinksParams.uplink_datarate_video_bps[linkIndex], g_pCurrentModel->radioLinksParams.uplink_datarate_data_bps[linkIndex]);
 
       str_get_radio_frame_flags_description(linkFlags, szBuffR); 
       log_line("Received new radio link flags for radio link %d: %s, datarates: %d/%d", (int)linkIndex+1, szBuffR, datarateVideo, datarateData);
@@ -2217,7 +2198,7 @@ bool process_command(u8* pBuffer, int length)
          memcpy(&s_LastGoodRadioLinksParams, &(g_pCurrentModel->radioLinksParams), sizeof(type_radio_links_parameters));
       }
  
-      g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex] = linkFlags;
+      g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex] = linkFlags;
       g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[linkIndex] = datarateVideo;
       g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[linkIndex] = datarateData;
 
@@ -2297,8 +2278,6 @@ bool process_command(u8* pBuffer, int length)
          snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "rm -rf %s*", FOLDER_UPDATES);
          hw_execute_bash_command(szComm, NULL);
       }
-      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      hw_execute_bash_command(szComm, NULL);
       #endif
 
       #if defined (HW_PLATFORM_OPENIPC_CAMERA)
@@ -2307,8 +2286,6 @@ bool process_command(u8* pBuffer, int length)
          snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "rm -rf %s*", FOLDER_CONFIG);
          hw_execute_bash_command(szComm, NULL);
       }
-      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "touch %s%s", FOLDER_CONFIG, LOG_USE_PROCESS);
-      hw_execute_bash_command(szComm, NULL);
       #endif
       */
 
@@ -2936,10 +2913,26 @@ bool process_command(u8* pBuffer, int length)
 
    if ( uCommandType == COMMAND_ID_SET_RC_PARAMS )
    {
+      if ( iParamsLength != sizeof(rc_parameters_t) )
+      {
+         log_softerror_and_alarm("Received SET_RC_PARAMS structure of wrong size. Expected %d bytes, received %d bytes, for %d channels.", sizeof(rc_parameters_t), iParamsLength, MAX_RC_CHANNELS);
+         sendCommandReply(COMMAND_RESPONSE_FLAGS_FAILED_INVALID_PARAMS, 0, 0);
+         return true;
+      }
+
       sendCommandReply(COMMAND_RESPONSE_FLAGS_OK, 0, 0);
       rc_parameters_t* params = (rc_parameters_t*)(pBuffer + sizeof(t_packet_header)+sizeof(t_packet_header_command));
       memcpy(&g_pCurrentModel->rc_params, params, sizeof(rc_parameters_t));
-      log_dword("Received RC flags: ", g_pCurrentModel->rc_params.flags);
+      log_line("Did set new HID Id %u to vehicle, rc struct size: %d bytes for %d channels", g_pCurrentModel->rc_params.hid_id, sizeof(rc_parameters_t), MAX_RC_CHANNELS);
+      log_dword("Received RC flags: ", g_pCurrentModel->rc_params.uRCFlags);
+
+      log_line("RC Enabled: %s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?"Yes":"No");
+      log_line("RC Channels: %d", g_pCurrentModel->rc_params.channelsCount);
+      log_line("RC Output Enabled: %s", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?"Yes":"No");
+      log_line("RC Input HID Id: %u", g_pCurrentModel->rc_params.hid_id);
+      log_line("RC Input type: %u", g_pCurrentModel->rc_params.inputType);
+      log_line("RC Input translation type: %d", g_pCurrentModel->rc_params.iRCTranslationType);
+
       saveCurrentModel();
       signalReloadModel(MODEL_CHANGED_RC_PARAMS, 0);
       return true;
@@ -3090,7 +3083,7 @@ void on_received_command(u8* pBuffer, int length)
          return;
    }
 
-   log_line_commands("Received command nb.%d, retry count: %d, command type: %d: %s, command param: %u, extra info size: %d", pPHC->command_counter, pPHC->command_resend_counter, pPHC->command_type & COMMAND_TYPE_MASK, commands_get_description(((pPHC->command_type) & COMMAND_TYPE_MASK)), pPHC->command_param, length-sizeof(t_packet_header)-sizeof(t_packet_header_command));
+   log_line_commands("Received command nb.%d, retry count: %d, command type: %d: %s, command param: %u, total size: %d bytes, PH: %d bytes, PHC: %d bytes, extra info: %d bytes", pPHC->command_counter, pPHC->command_resend_counter, pPHC->command_type & COMMAND_TYPE_MASK, commands_get_description(((pPHC->command_type) & COMMAND_TYPE_MASK)), pPHC->command_param, length, sizeof(t_packet_header), sizeof(t_packet_header_command), length-sizeof(t_packet_header)-sizeof(t_packet_header_command));
 
    lastRecvSourceControllerId = pPH->vehicle_id_src;
    lastRecvCommandNumber = pPHC->command_counter;
@@ -3122,8 +3115,10 @@ void _periodic_loop()
          g_pCurrentModel->validateRadioSettings();
 
          char szBuffR[128];
-         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags[s_iRadioLinkIdChangeConfirmation], szBuffR); 
-         log_line("Revert radio link flags for link %d to: %s, datarates: %d/%d", s_iRadioLinkIdChangeConfirmation+1, szBuffR, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[s_iRadioLinkIdChangeConfirmation], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[s_iRadioLinkIdChangeConfirmation]);
+         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_tx[s_iRadioLinkIdChangeConfirmation], szBuffR); 
+         log_line("Revert radio link tx flags for link %d to: %s, downlink datarates: %d/%d", s_iRadioLinkIdChangeConfirmation+1, szBuffR, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[s_iRadioLinkIdChangeConfirmation], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[s_iRadioLinkIdChangeConfirmation]);
+         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_rx[s_iRadioLinkIdChangeConfirmation], szBuffR); 
+         log_line("Revert radio link rx flags for link %d to: %s, uplink datarates: %d/%d", s_iRadioLinkIdChangeConfirmation+1, szBuffR, g_pCurrentModel->radioLinksParams.uplink_datarate_video_bps[s_iRadioLinkIdChangeConfirmation], g_pCurrentModel->radioLinksParams.uplink_datarate_data_bps[s_iRadioLinkIdChangeConfirmation]);
    
          saveCurrentModel();
 

@@ -101,7 +101,7 @@ void _adaptive_video_log_state(Model* pModel, type_global_state_vehicle_runtime_
 
    u32 uProfileFlags = pModel->video_link_profiles[pModel->video_params.iCurrentVideoProfile].uProfileFlags;
    u32 uMaxDRBoost = (uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT;
-   int iDataRateForCurrentVideoBitrate = pModel->getRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, 0, true);
+   int iDataRateForCurrentVideoBitrate = pModel->getRequiredRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, 0, true);
    char szDR[128];
    _adaptive_video_log_DRlinks(pModel, pRuntimeInfo, szDR);
 
@@ -244,7 +244,7 @@ void adaptive_video_reset_state(u32 uVehicleId)
          g_State.vehiclesRuntimeInfo[iRuntimeIndex].iCurrentDataratesForLinks[k] = 0;
          if ( k < pModel->radioLinksParams.links_count )
          {
-            g_State.vehiclesRuntimeInfo[iRuntimeIndex].iCurrentDataratesForLinks[k] = pModel->getRadioDataRateForVideoBitrate(g_State.vehiclesRuntimeInfo[iRuntimeIndex].uCurrentAdaptiveVideoTargetVideoBitrateBPS, k, true);
+            g_State.vehiclesRuntimeInfo[iRuntimeIndex].iCurrentDataratesForLinks[k] = pModel->getRequiredRadioDataRateForVideoBitrate(g_State.vehiclesRuntimeInfo[iRuntimeIndex].uCurrentAdaptiveVideoTargetVideoBitrateBPS, k, true);
          }
       }
       if ( pModel->video_link_profiles[pModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAG_USE_HIGHER_DATARATE )
@@ -497,7 +497,7 @@ void _adaptive_video_send_adaptive_message_to_vehicle(u32 uVehicleId)
    _adaptive_video_log_DRlinks(pModel, pRuntimeInfo, szDR);
    if ( 0 != uVideoBitrate )
    {
-      int iDRToFitVideo = pModel->getRadioDataRateForVideoBitrate(uVideoBitrate, 0, true);
+      int iDRToFitVideo = pModel->getRequiredRadioDataRateForVideoBitrate(uVideoBitrate, 0, true);
       log_line("[AdaptiveVideo] Sent adaptive video message to vehicle %u (req id: %u), %s: %s, Video bitrate: %.2f Mbps (of %.2f Mbps) (fits in datarate %s, max video bitrate for this radio rate is: %.2f Mbps, max radio data for this rate: %.2f Mbps), EC: %d/%d, Current DR for links: %s, DR boost: %d",
          uVehicleId, pRuntimeInfo->uAdaptiveVideoRequestId,
          pRuntimeInfo->bDidFirstTimeAdaptiveHandshake?"flags":" (first time handshake) flags",
@@ -505,7 +505,7 @@ void _adaptive_video_send_adaptive_message_to_vehicle(u32 uVehicleId)
          (float)uVideoBitrate/1000.0/1000.0, (float)pModel->video_link_profiles[pModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS/1000.0/1000.0,
          str_format_datarate_inline(iDRToFitVideo),
          (float)pModel->getMaxVideoBitrateForRadioDatarate(iDRToFitVideo, 0)/1000.0/1000.0,
-         (float)getRealDataRateFromRadioDataRate(iDRToFitVideo, pModel->radioLinksParams.link_radio_flags[0], 1)/1000.0/1000.0,
+         (float)getRealDataRateFromRadioDataRate(iDRToFitVideo, pModel->radioLinksParams.link_radio_flags_tx[0], 1)/1000.0/1000.0,
          (uEC >> 8) & 0xFF, uEC & 0xFF,
          szDR, uDRBoost);
    }
@@ -984,7 +984,7 @@ bool _adaptive_video_switch_lower(Model* pModel, type_global_state_vehicle_runti
       if ( ! pModel->isRadioLinkAdaptiveUsable(iLink) )
          continue;
 
-      int iDataRateForCurrentVideoBitrate = pModel->getRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
+      int iDataRateForCurrentVideoBitrate = pModel->getRequiredRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
       char szCurDR[64];
       strcpy(szCurDR, str_format_datarate_inline(pRuntimeInfo->iCurrentDataratesForLinks[iLink]));
       log_line("[AdaptiveVideo] Switch lower: Radio link %d required datarate for current video bitrate is: %s; Current DR is: %s", iLink+1, str_format_datarate_inline(iDataRateForCurrentVideoBitrate), szCurDR);
@@ -1116,7 +1116,7 @@ bool _adaptive_video_switch_higher(Model* pModel, type_global_state_vehicle_runt
          if ( ! pModel->isRadioLinkAdaptiveUsable(iLink) )
             continue;
 
-         //int iDataRateForCurrentVideoBitrate = pModel->getRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
+         //int iDataRateForCurrentVideoBitrate = pModel->getRequiredRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
          int iDataRateForCurrentVideoBitrate = pRuntimeInfo->iCurrentDataratesForLinks[iLink];
          u32 uMaxVideoBitrateForLink = pModel->getMaxVideoBitrateForRadioDatarate(iDataRateForCurrentVideoBitrate, iLink);
          log_line("[AdaptiveVideo] Switch higher to default EC scheme: current datarate for radio link %d: %d, max video bitrate for current datarate: %.1f", iLink+1, iDataRateForCurrentVideoBitrate, (float)uMaxVideoBitrateForLink/1000.0/1000.0);
@@ -1158,7 +1158,7 @@ bool _adaptive_video_switch_higher(Model* pModel, type_global_state_vehicle_runt
       if ( ! pModel->isRadioLinkAdaptiveUsable(iLink) )
          continue;
 
-      iCurrentDatarates[iLink] = pModel->getRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
+      iCurrentDatarates[iLink] = pModel->getRequiredRadioDataRateForVideoBitrate(pRuntimeInfo->uCurrentAdaptiveVideoTargetVideoBitrateBPS, iLink, true);
       log_line("[AdaptiveVideo] Switch higher: Radio link %d required datarate for current video bitrate is: %s", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]));
 
       // Can't go higher rate? Skip it
@@ -1171,12 +1171,12 @@ bool _adaptive_video_switch_higher(Model* pModel, type_global_state_vehicle_runt
          uMaxLinkLoadPercentage = pModel->video_link_profiles[pModel->video_params.iCurrentVideoProfile].iDefaultLinkLoad;
 
       log_line("[AdaptiveVideo] Switch higher: Radio link %d datarate %s, max video bitrate for it: %.2f Mbps", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]), (float)uMaxVideoBitrateForLinkDatarate/1000.0/1000.0);
-      log_line("[AdaptiveVideo] Switch higher: Radio link %d datarate %s, max data throughtput: %u bps", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]), getRealDataRateFromRadioDataRate(iCurrentDatarates[iLink], pModel->radioLinksParams.link_radio_flags[iLink], 1));
+      log_line("[AdaptiveVideo] Switch higher: Radio link %d datarate %s, max data throughtput: %u bps", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]), getRealDataRateFromRadioDataRate(iCurrentDatarates[iLink], pModel->radioLinksParams.link_radio_flags_tx[iLink], 1));
       log_line("[AdaptiveVideo] Switch higher: Radio link %d datarate %s, max load percent: radio: %d%%, EC: %d%%", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]), uMaxLinkLoadPercentage, pModel->video_link_profiles[pModel->video_params.iCurrentVideoProfile].iECPercentage);
       uMaxVideoBitrateForLinkDatarate = uMaxVideoBitrateForLinkDatarate + uMaxVideoBitrateForLinkDatarate/20;
       if ( uMaxVideoBitrateForLinkDatarate > pModel->video_link_profiles[iCurrentVideoProfile].uTargetVideoBitrateBPS )
          uMaxVideoBitrateForLinkDatarate = pModel->video_link_profiles[iCurrentVideoProfile].uTargetVideoBitrateBPS;
-      int iNewDR = pModel->getRadioDataRateForVideoBitrate(uMaxVideoBitrateForLinkDatarate, iLink, true);
+      int iNewDR = pModel->getRequiredRadioDataRateForVideoBitrate(uMaxVideoBitrateForLinkDatarate, iLink, true);
       log_line("[AdaptiveVideo] Switch higher: Radio link %d datarate would be: %s for new video bitrate: %.2f Mbps", iLink+1, str_format_datarate_inline(iNewDR), (float)uMaxVideoBitrateForLinkDatarate/1000.0/1000.0);
 
       if ( uMaxVideoBitrateForLinkDatarate < uNewHigherVideoBitrate )
@@ -1193,7 +1193,7 @@ bool _adaptive_video_switch_higher(Model* pModel, type_global_state_vehicle_runt
       bool bUpdatedRates = false;
       for( int iLink=0; iLink<pModel->radioLinksParams.links_count; iLink++)
       {
-         int iNewDatarate = pModel->getRadioDataRateForVideoBitrate(uNewHigherVideoBitrate, iLink, true);
+         int iNewDatarate = pModel->getRequiredRadioDataRateForVideoBitrate(uNewHigherVideoBitrate, iLink, true);
          char szNewDatarate[64];
          strcpy(szNewDatarate, str_format_datarate_inline(iNewDatarate));
          log_line("[AdaptiveVideo] Do switch higher: current/new radio link %d datarate: %s / %s", iLink+1, str_format_datarate_inline(iCurrentDatarates[iLink]), szNewDatarate);

@@ -325,7 +325,7 @@ void tx_power_get_current_mw_powers_for_model(Model* pModel, int* piOutputArray)
 
    for( int i=0; i<pModel->radioInterfacesParams.interfaces_count; i++ )
    {
-      if ( ! hardware_radio_type_is_ieee(pModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+      if ( ! hardware_radio_type_is_wifi(pModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
          continue;
       int iCardModel = pModel->radioInterfacesParams.interface_card_model[i];
       if ( iCardModel < 0 )
@@ -362,7 +362,7 @@ int get_vehicle_radio_link_current_tx_power_mw(Model* pModel, int iRadioLinkInde
    int iMaxCardPowerMw = 1;
    for( int i=0; i<pModel->radioInterfacesParams.interfaces_count; i++ )
    {
-      if ( ! hardware_radio_type_is_ieee(pModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+      if ( ! hardware_radio_type_is_wifi(pModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
          continue;
       if ( pModel->radioInterfacesParams.interface_link_id[i] != iRadioLinkIndex )
          continue;

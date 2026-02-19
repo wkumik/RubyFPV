@@ -117,9 +117,9 @@ void _set_default_sik_params_for_vehicle(Model* pModel)
             hardware_radio_sik_set_frequency_txpower_airspeed_lbt_ecc(pRadioHWInfo,
                uFreq, pModel->radioInterfacesParams.interface_raw_power[i],
                pModel->radioLinksParams.downlink_datarate_data_bps[iLinkIndex],
-               (u32)((pModel->radioLinksParams.link_radio_flags[iLinkIndex] & RADIO_FLAGS_SIK_ECC)?1:0),
-               (u32)((pModel->radioLinksParams.link_radio_flags[iLinkIndex] & RADIO_FLAGS_SIK_LBT)?1:0),
-               (u32)((pModel->radioLinksParams.link_radio_flags[iLinkIndex] & RADIO_FLAGS_SIK_MCSTR)?1:0),
+               (u32)((pModel->radioLinksParams.link_radio_flags_tx[iLinkIndex] & RADIO_FLAGS_SIK_ECC)?1:0),
+               (u32)((pModel->radioLinksParams.link_radio_flags_tx[iLinkIndex] & RADIO_FLAGS_SIK_LBT)?1:0),
+               (u32)((pModel->radioLinksParams.link_radio_flags_tx[iLinkIndex] & RADIO_FLAGS_SIK_MCSTR)?1:0),
                NULL);
          }
       }
@@ -195,9 +195,7 @@ bool _check_radio_config(Model* pModel)
    
    if ( check_update_hardware_nics_vehicle(pModel) || recheck_disabled_radio_interfaces(pModel) )
    {
-      pModel->radioRuntimeCapabilities.uFlagsRuntimeCapab &= ~MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED;
-      pModel->radioLinksParams.uGlobalRadioLinksFlags &= ~MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS;
-
+      pModel->resetRadioInterfacesRuntimeCapabilities(NULL);
       log_line("[HW Radio Check] Hardware radio interfaces configuration check complete and configuration was changed. This is the new hardware radio interfaces and radio links configuration:");
       log_full_current_radio_configuration(pModel);
       _set_default_sik_params_for_vehicle(pModel);
@@ -344,7 +342,7 @@ void try_open_process_stats()
          log_line("Opened shared mem to commands Rx process watchdog for reading.");
    }
 
-   if ( modelVehicle.rc_params.rc_enabled )
+   if ( modelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED )
    if ( NULL == s_pProcessStatsRC )
    {
       s_pProcessStatsRC = shared_mem_process_stats_open_read(SHARED_MEM_WATCHDOG_RC_RX);
@@ -364,7 +362,7 @@ void _launch_vehicle_processes(bool bWait)
    hardware_sleep_ms(100);
    vehicle_launch_rx_commands(&modelVehicle);
 
-   if ( modelVehicle.rc_params.rc_enabled )
+   if ( modelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED )
    {
       hardware_sleep_ms(100);
       vehicle_launch_rx_rc(&modelVehicle);
@@ -797,24 +795,10 @@ int r_start_vehicle(int argc, char *argv[])
 
    // Check logger service flag change
 
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-
-   if ( access(szFile, R_OK) != -1 )
+   if ( ! (modelVehicle.uModelFlags & MODEL_FLAG_USE_LOGER_SERVICE) )
    {
-      if ( ! (modelVehicle.uModelFlags & MODEL_FLAG_USE_LOGER_SERVICE) )
-      {
-         modelVehicle.uModelFlags |= MODEL_FLAG_USE_LOGER_SERVICE;
-         bMustSave = true;
-      }
-   }
-   else
-   {
-      if ( modelVehicle.uModelFlags & MODEL_FLAG_USE_LOGER_SERVICE )
-      {
-         modelVehicle.uModelFlags &= ~MODEL_FLAG_USE_LOGER_SERVICE;
-         bMustSave = true;
-      }
+      modelVehicle.uModelFlags |= MODEL_FLAG_USE_LOGER_SERVICE;
+      bMustSave = true;
    }
 
    bMustSave |= _check_radio_config(&modelVehicle);
@@ -969,7 +953,7 @@ int r_start_vehicle(int argc, char *argv[])
 
          modelVehicle.reloadIfChanged(true);
 
-         if ( NULL == s_pProcessStatsRouter || NULL == s_pProcessStatsTelemetry || NULL == s_pProcessStatsCommands || ((NULL == s_pProcessStatsRC) && modelVehicle.rc_params.rc_enabled) )
+         if ( NULL == s_pProcessStatsRouter || NULL == s_pProcessStatsTelemetry || NULL == s_pProcessStatsCommands || ((NULL == s_pProcessStatsRC) && (modelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED)) )
             try_open_process_stats();
          if ( NULL == s_pProcessStatsRouter )
             continue;
@@ -1013,7 +997,7 @@ int r_start_vehicle(int argc, char *argv[])
       if ( noWatchDog )
          continue;
 
-      if ( (NULL == s_pProcessStatsRouter) || (NULL == s_pProcessStatsTelemetry) || (NULL == s_pProcessStatsCommands) || ((NULL == s_pProcessStatsRC) && modelVehicle.rc_params.rc_enabled))
+      if ( (NULL == s_pProcessStatsRouter) || (NULL == s_pProcessStatsTelemetry) || (NULL == s_pProcessStatsCommands) || ((NULL == s_pProcessStatsRC) && (modelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED)))
          try_open_process_stats();
       
       bMustRestart = false;
@@ -1105,7 +1089,7 @@ int r_start_vehicle(int argc, char *argv[])
       }
 
       if ( NULL != s_pProcessStatsRC )
-      if ( modelVehicle.rc_params.rc_enabled )
+      if ( modelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED )
       {
          if ( (s_pProcessStatsRC->lastActiveTime + maxTimeForProcessMs*4 < g_TimeNow) && _check_restrict_files() )
             s_failCountProcessRC++;

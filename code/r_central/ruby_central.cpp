@@ -239,6 +239,7 @@ void load_resources()
 {
    loadAllFonts(true);
 
+   /*
    s_iBgImageCount = 3;
    int iDelta = 1;
    iDelta = 5;
@@ -263,13 +264,20 @@ void load_resources()
    s_iBgImageIndex = rand()%s_iBgImageCount;
    if ( (s_iBgImageIndex < 0) || (s_iBgImageIndex > s_iBgImageCount-1) )
       s_iBgImageIndex = 0;
+   */
+
+   s_iBgImageCount = 1;
+   s_iBgImageIndexPrev = 0;
+   s_iBgImageIndex = 0;
+   s_idBgImage[0] = g_pRenderEngine->loadImage("res/ruby_bg2.png");
+   s_idBgImageMenu[0] = g_pRenderEngine->loadImage("res/ruby_bg2_blr.png");
 
    osd_load_resources();
 }
 
 void _draw_background_picture()
 {
-   if ( g_TimeNow > s_uTimeLastChangeBgImage + 40000 )
+   if ( (s_iBgImageCount > 1) && (g_TimeNow > s_uTimeLastChangeBgImage + 40000) )
    {
       s_uTimeLastChangeBgImage = g_TimeNow;
       if ( (! g_bUpdateInProgress) && (! g_bSearching) )
@@ -1268,10 +1276,10 @@ void executeQuickActions()
       rc_parameters_t params;
       memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
 
-      if ( params.flags & RC_FLAGS_OUTPUT_ENABLED )
-         params.flags &= (~RC_FLAGS_OUTPUT_ENABLED);
+      if ( params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED )
+         params.uRCFlags &= (~RC_FLAGS_OUTPUT_ENABLED);
       else
-         params.flags |= RC_FLAGS_OUTPUT_ENABLED;
+         params.uRCFlags |= RC_FLAGS_OUTPUT_ENABLED;
       handle_commands_abandon_command();
       handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t));
       return;
@@ -2107,7 +2115,7 @@ void start_loop()
       else
          log_line("Opened shared mem to video rx process watchdog stats for reading.");
 
-      if ( (NULL != g_pCurrentModel) && g_pCurrentModel->rc_params.rc_enabled )
+      if ( (NULL != g_pCurrentModel) && (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       {
          g_pProcessStatsRC = shared_mem_process_stats_open_read(SHARED_MEM_WATCHDOG_RC_TX);
          if ( NULL == g_pProcessStatsRC )
@@ -2222,7 +2230,7 @@ void synchronize_shared_mems()
 
    if ( (NULL != g_pCurrentModel) && (!g_bSearching) )
    {
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
       if ( NULL == g_pProcessStatsRC )
       {
          g_pProcessStatsRC = shared_mem_process_stats_open_read(SHARED_MEM_WATCHDOG_RC_TX);

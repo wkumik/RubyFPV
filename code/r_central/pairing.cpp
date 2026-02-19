@@ -129,7 +129,7 @@ bool _pairing_start()
    if ( NULL != g_pCurrentModel && (! g_pCurrentModel->is_spectator) )
       g_pCurrentModel->b_mustSyncFromVehicle = true;
 
-   if ( NULL != g_pCurrentModel && g_pCurrentModel->rc_params.rc_enabled )
+   if ( (NULL != g_pCurrentModel) && (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
    {
        Popup* p = new Popup(true, "RC link is enabled", 3 );
        p->setIconId(g_idIconJoystick, get_Color_IconWarning());

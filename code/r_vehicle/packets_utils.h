@@ -12,6 +12,8 @@ int get_last_tx_used_datarate_bps_data(int iInterface);
 u32 get_last_tx_minimum_video_radio_datarate_bps();
 u32 get_last_tx_maximum_video_radio_datarate_bps();
 
+void compute_packet_tx_power_on_ieee(int iVehicleRadioLinkId, int iRadioInterfaceIndex, int iDataRateTx);
+
 int send_packet_to_radio_interfaces(u8* pPacketData, int nPacketLength, int iSendToSingleRadioLink);
 void send_packet_vehicle_log(u8* pBuffer, int length);
 

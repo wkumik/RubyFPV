@@ -102,6 +102,7 @@ void hardware_loop();
 void hardware_swap_buttons(int swap);
 
 void hardware_detectBoardAndSystemType();
+void hardware_writeBoardAndSystemType();
 u32 hardware_detectBoardType();
 u32 hardware_getBoardType();
 int hardware_get_board_subtypes_count();
@@ -121,6 +122,7 @@ int hardware_open_joystick(int joystickIndex);
 void hardware_close_joystick(int joystickIndex);
 int hardware_read_joystick(int joystickIndex, int miliSec);
 int hardware_is_joystick_opened(int joystickIndex);
+void hardware_uninit_joysticks();
 
 u16 hardware_get_flags();
 

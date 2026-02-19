@@ -1,12 +1,25 @@
 #include <SDL2/SDL.h>
-
+#include "../base/base.h"
 // This program opens a joystick and tells you
 // when a button is pressed or an axis is moved.
 // This demsontrates how to read from the joystick
 // using an event-based system. In another example
 // I will show how to poll the state of each button.
+
+int iQuit = 0;
+
+void handle_sigint(int sig) 
+{ 
+   iQuit = 1;
+} 
+
+
 int main()
 { 
+   signal(SIGINT, handle_sigint);
+   signal(SIGTERM, handle_sigint);
+   signal(SIGQUIT, handle_sigint);
+
     // Initialize the joystick subsystem for SDL2
     int joysticks = SDL_Init(SDL_INIT_JOYSTICK);
 
@@ -17,11 +30,26 @@ int main()
     }
 
     // Check how many joysticks are connected.
-    joysticks = SDL_NumJoysticks();
-    printf("There are %d joysticks connected.\n", joysticks);
+    joysticks = 0;
+    while ( (joysticks <= 0) && (0 == iQuit) )
+    {
+       SDL_Quit();
+       joysticks = SDL_Init(SDL_INIT_JOYSTICK);
 
-    SDL_JoystickEventState(SDL_ENABLE);
+       // If there was an error setting up the joystick subsystem, quit.
+       if (joysticks < 0) {
+           printf("Unable to initialize the joystick subsystem.\n");
+           return -1;
+       }
 
+       hardware_sleep_ms(500);
+       joysticks = SDL_NumJoysticks();
+       printf("There are %d joysticks connected.\n", joysticks);
+
+       SDL_JoystickEventState(SDL_ENABLE);
+    }
+    if ( iQuit )
+       return 0;
     SDL_Joystick *js = NULL;
     // If there are joysticks connected, open one up for reading
     if (joysticks > 0)
@@ -56,7 +84,8 @@ int main()
     // the quit variable to a non-zero value. We
     // put this loop so that we can keep on listening to
     // the joystick until we are done with it.
-    while (!quit) {
+    while ((!quit) && (0 == iQuit))
+    {
         // The event variable stores a list of events.
         // The inner loop keeps reading the events
         // one-by-one until there are no events left

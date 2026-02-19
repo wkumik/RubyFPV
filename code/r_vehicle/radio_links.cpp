@@ -70,16 +70,6 @@ bool configure_radio_interfaces_for_current_model(Model* pModel, shared_mem_radi
       return false;
    }
 
-   // Populate radio interfaces radio flags from radio links radio flags and rates
-
-   for( int i=0; i<pModel->radioInterfacesParams.interfaces_count; i++ )
-   {
-      if ( (pModel->radioInterfacesParams.interface_link_id[i] >= 0) && (pModel->radioInterfacesParams.interface_link_id[i] < pModel->radioLinksParams.links_count) )
-         pModel->radioInterfacesParams.interface_current_radio_flags[i] = pModel->radioLinksParams.link_radio_flags[pModel->radioInterfacesParams.interface_link_id[i]];
-      else
-         log_softerror_and_alarm("No radio link or invalid radio link (%d of %d) assigned to radio interface %d.", pModel->radioInterfacesParams.interface_link_id[i], pModel->radioLinksParams.links_count, i+1);
-   }
-
    for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )
    {
       radio_hw_info_t* pRadioHWInfo = hardware_get_radio_info(i);
@@ -153,9 +143,9 @@ bool configure_radio_interfaces_for_current_model(Model* pModel, shared_mem_radi
             }
             u32 uFreqKhz = uRadioLinkFrequency;
             u32 uTxPower = pModel->radioInterfacesParams.interface_raw_power[iInterface];
-            u32 uECC = (pModel->radioLinksParams.link_radio_flags[iLink] & RADIO_FLAGS_SIK_ECC)? 1:0;
-            u32 uLBT = (pModel->radioLinksParams.link_radio_flags[iLink] & RADIO_FLAGS_SIK_LBT)? 1:0;
-            u32 uMCSTR = (pModel->radioLinksParams.link_radio_flags[iLink] & RADIO_FLAGS_SIK_MCSTR)? 1:0;
+            u32 uECC = (pModel->radioLinksParams.link_radio_flags_tx[iLink] & RADIO_FLAGS_SIK_ECC)? 1:0;
+            u32 uLBT = (pModel->radioLinksParams.link_radio_flags_tx[iLink] & RADIO_FLAGS_SIK_LBT)? 1:0;
+            u32 uMCSTR = (pModel->radioLinksParams.link_radio_flags_tx[iLink] & RADIO_FLAGS_SIK_MCSTR)? 1:0;
             u32 uDataRate = pModel->radioLinksParams.downlink_datarate_data_bps[iLink];
             bool bDataRateOk = false;
             for( int k=0; k<getSiKAirDataRatesCount(); k++ )
@@ -522,8 +512,8 @@ bool radio_links_apply_settings(Model* pModel, int iRadioLink, type_radio_links_
    bool bUpdateFreq = false;
    if ( pRadioLinkParamsOld->link_frequency_khz[iRadioLink] != pRadioLinkParamsNew->link_frequency_khz[iRadioLink] )
       bUpdateFreq = true;
-   if ( (pRadioLinkParamsOld->link_radio_flags[iRadioLink] & RADIO_FLAG_HT40_VEHICLE) != 
-        (pRadioLinkParamsNew->link_radio_flags[iRadioLink] & RADIO_FLAG_HT40_VEHICLE) )
+   if ( (pRadioLinkParamsOld->link_radio_flags_tx[iRadioLink] & RADIO_FLAG_HT40) != 
+        (pRadioLinkParamsNew->link_radio_flags_tx[iRadioLink] & RADIO_FLAG_HT40) )
       bUpdateFreq = true;
 
    if ( bUpdateFreq )     
@@ -600,6 +590,7 @@ bool radio_links_restart(bool bAsync)
 
    packets_queue_init(&g_QueueRadioPacketsOut);
    packets_queue_init(&s_QueueControlPackets);
+   packets_queue_init(&g_QueueRelayRadioPacketsOutToRelayedVehicle);
 
    for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
    {
@@ -675,7 +666,7 @@ bool radio_links_restart(bool bAsync)
 
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)&PH, PH.total_length);
       ruby_ipc_channel_send_message(s_fIPCRouterToCommands, (u8*)&PH, PH.total_length);
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)&PH, PH.total_length);
                
       if ( NULL != g_pProcessStats )

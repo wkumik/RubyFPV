@@ -41,7 +41,7 @@ MenuSearchConnect::MenuSearchConnect(void)
 {
    m_iSearchModelTypes = 0;
    float height_text = g_pRenderEngine->textHeight(g_idFontMenu);
-   m_Width = 0.40 + 3.0*height_text;
+   m_Width = 0.50 + 3.0*height_text;
    m_xPos = menu_get_XStartPos(this, m_Width);
    m_yPos = 0.32;
    m_bSpectatorOnlyMode = false;
@@ -79,11 +79,14 @@ void MenuSearchConnect::onShow()
    }
 
    if ( iCountLinks > 1 )
-      m_Width = 0.46;
+      m_Width = 0.54;
    if ( (!m_bSpectatorOnlyMode) && (m_iSearchModelTypes == 0) )
+   {
       m_iIndexController = addMenuItem(new MenuItem( L("Connect for control"), L("Connect to this vehicle as controller")));
-   else
       addExtraHeightAtEnd(g_pRenderEngine->textHeight(g_idFontMenu));
+   }
+   else
+      addExtraHeightAtEnd(2.0*g_pRenderEngine->textHeight(g_idFontMenu));
 
    m_iIndexSpectator = addMenuItem(new MenuItem(L("View as spectator"), L("Connect to this vehicle as spectator")));
    m_iIndexSkip = addMenuItem(new MenuItem(L("Skip"), L("Skip this vehicle")));

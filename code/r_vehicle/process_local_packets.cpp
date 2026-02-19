@@ -344,7 +344,7 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
       checkDeveloperFlagsChanges(uOldDevFlags, g_pCurrentModel->uDeveloperFlags);
 
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       return;
    }
@@ -479,7 +479,7 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
 
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
       ruby_ipc_channel_send_message(s_fIPCRouterToCommands, (u8*)pPH, pPH->total_length);
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       return;
    }
@@ -592,7 +592,7 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
 
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
       ruby_ipc_channel_send_message(s_fIPCRouterToCommands, (u8*)pPH, pPH->total_length);
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       
       send_alarm_to_controller(ALARM_ID_GENERIC, ALARM_ID_GENERIC_TYPE_SWAPPED_RADIO_INTERFACES, 0, 10);
@@ -809,9 +809,9 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
       int iLink = iExtraParam;
       log_line("Received local notification that radio flags or datarates changed on radio link %d. Update radio frames type right away.", iLink+1);
       
-      u32 radioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[iLink];
       log_line("Radio link %d new datarates: %d/%d", iLink+1, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[iLink], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[iLink]);
-      log_line("Radio link %d new radio flags: %s", iLink+1, str_get_radio_frame_flags_description2(radioFlags));
+      log_line("Radio link %d new radio tx flags: %s", iLink+1, str_get_radio_frame_flags_description2(g_pCurrentModel->radioLinksParams.link_radio_flags_tx[iLink]));
+      log_line("Radio link %d new radio rx flags: %s", iLink+1, str_get_radio_frame_flags_description2(g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iLink]));
       
       if( g_pCurrentModel->radioLinkIsSiKRadio(iLink) )
       {
@@ -840,9 +840,9 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
 
    if ( changeType == MODEL_CHANGED_RC_PARAMS )
    {
-      if ( oldRCParams.rc_enabled != g_pCurrentModel->rc_params.rc_enabled )
+      if ( (oldRCParams.uRCFlags & RC_FLAGS_ENABLED) != (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       {
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          {
             log_line("RC link is enabled. Slow down telemetry packets frequency on slow links.");
             radio_reset_packets_default_frequencies(1);
@@ -852,7 +852,7 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
       }
 
       // If RC was disabled, stop Rx Rc process
-      if ( oldRCParams.rc_enabled && (! g_pCurrentModel->rc_params.rc_enabled) )
+      if ( (oldRCParams.uRCFlags & RC_FLAGS_ENABLED) && (! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)) )
       {
          vehicle_stop_rx_rc();
          ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
@@ -860,14 +860,14 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
       }
 
       // If RC was enabled, start Rx Rc process
-      if ( (! oldRCParams.rc_enabled) && g_pCurrentModel->rc_params.rc_enabled )
+      if ( (! (oldRCParams.uRCFlags & RC_FLAGS_ENABLED)) && (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       {
          vehicle_launch_rx_rc(g_pCurrentModel);
          ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
          return;       
       }
 
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
 
@@ -896,13 +896,13 @@ void _process_local_notification_model_changed(t_packet_header* pPH, int changeT
       if ( fromComponentId == PACKET_COMPONENT_COMMANDS )
       {
          ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)pPH, pPH->total_length);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
             ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       }
       if ( fromComponentId == PACKET_COMPONENT_TELEMETRY )
       {
          ruby_ipc_channel_send_message(s_fIPCRouterToCommands, (u8*)pPH, pPH->total_length);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
             ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)pPH, pPH->total_length);
       }
    }
@@ -1003,7 +1003,7 @@ void process_local_control_packet(t_packet_header* pPH)
          PH.total_length = sizeof(t_packet_header);
 
          ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)&PH, PH.total_length);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
             ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)&PH, PH.total_length);
 
          if ( NULL != g_pProcessStats )
@@ -1033,7 +1033,7 @@ void process_local_control_packet(t_packet_header* pPH)
          PH.total_length = sizeof(t_packet_header);
 
          ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, (u8*)&PH, PH.total_length);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
             ruby_ipc_channel_send_message(s_fIPCRouterToRC, (u8*)&PH, PH.total_length);
 
          if ( NULL != g_pProcessStats )

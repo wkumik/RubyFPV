@@ -222,7 +222,7 @@ float MenuSystemAllParams::renderVehicleRC(float xPos, float yPos, float width, 
 
    char szBuff[1024];
 
-   sprintf(szBuff, "RC: %s, ch %d / fps %d / output enabled: %d / fs %d ms", g_pCurrentModel->rc_params.rc_enabled?"Enabled":"Disabled", g_pCurrentModel->rc_params.channelsCount, g_pCurrentModel->rc_params.rc_frames_per_second, (g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED), g_pCurrentModel->rc_params.rc_failsafe_timeout_ms);
+   sprintf(szBuff, "RC: %s, ch %d / fps %d / output enabled: %d / fs %d ms", (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?"Enabled":"Disabled", g_pCurrentModel->rc_params.channelsCount, g_pCurrentModel->rc_params.rc_frames_per_second, (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED), g_pCurrentModel->rc_params.rc_failsafe_timeout_ms);
    yPos += g_pRenderEngine->drawMessageLines(xPos, yPos, szBuff, MENU_TEXTLINE_SPACING, width, g_idFontMenuSmall);
    yPos += MENU_TEXTLINE_SPACING * height_text;
 

@@ -18,7 +18,6 @@
 #define FILE_FORMAT_SCREENSHOT "picture-%s-%d-%d-%d.png"
 #define FILE_FORMAT_VIDEO_INFO "video-%s-%d-%d-%d.info"
 
-#define LOG_USE_PROCESS "use_log_process"
 #define CONFIG_FILENAME_DEBUG "debug"
 #define FILE_INFO_VERSION "version_ruby_base.txt"
 #define FILE_INFO_SHORT_LAST_UPDATE "ruby_update.log"
@@ -53,7 +52,8 @@
 #define FILE_CONFIG_OSD_PLUGINS_SETTINGS "osd_plugins_settings.cfg"
 #define FILE_CONFIG_CORE_PLUGINS_SETTINGS "core_plugins_settings.cfg"
 #define FILE_CONFIG_CONTROLLER_SETTINGS "controller_settings.cfg"
-#define FILE_CONFIG_CONTROLLER_INTERFACES "controller_interfaces.cfg"
+#define FILE_CONFIG_CONTROLLER_INPUT_INTERFACES "controller_input_interfaces.cfg"
+#define FILE_CONFIG_CONTROLLER_RADIO_INTERFACES "controller_radio_interfaces.cfg"
 #define FILE_CONFIG_CONTROLLER_ID "controller_id.cfg"
 #define FILE_CONFIG_CONTROLLER_OSD_WIDGETS "osd_widgets.cfg"
 #define FILE_CONFIG_CONTROLLER_FAVORITES_VEHICLES "favorites.cfg"

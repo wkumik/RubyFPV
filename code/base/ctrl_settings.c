@@ -150,6 +150,8 @@ int save_ControllerSettings()
    char szFile[128];
    strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_CONTROLLER_SETTINGS);
+   hardware_file_check_and_fix_access_c(szFile);
+
    FILE* fd = fopen(szFile, "w");
    if ( NULL == fd )
    {
@@ -204,6 +206,7 @@ int save_ControllerSettings()
    fprintf(fd, "%d %d %d %d %d\n", s_CtrlSettings.iRecordSTRGPS, s_CtrlSettings.iRecordSTRAlt, s_CtrlSettings.iRecordSTRRSSI, s_CtrlSettings.iRecordSTRVoltage, s_CtrlSettings.iRecordSTRBitrate);
    fclose(fd);
 
+   hardware_file_check_and_fix_access_c(szFile);
    log_line("Saved controller settings to file: %s", szFile);
    return 1;
 }

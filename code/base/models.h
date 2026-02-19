@@ -222,15 +222,13 @@ typedef struct
 
 typedef struct
 {
-   bool rc_enabled;
+   u32 uRCFlags; // Flags RC_FLAGS_xxxx in config_rc.h
+          // bit 0: RC enabled
+          // bit 1: output to FC enabled
    int rc_frames_per_second;
    int rc_failsafe_timeout_ms;
    int receiver_type;
    int inputType; // RC input type on the controller: 0 none, 1 usb, 2 ibus/sbus, see config_rc.h enum
-   int inputSerialPort;
-   long inputSerialPortSpeed;
-   int outputSerialPort;
-   long outputSerialPortSpeed;
 
    u32 rcChAssignment[MAX_RC_CHANNELS];
       // first byte:
@@ -257,11 +255,9 @@ typedef struct
                       // 2nd-3rd byte: failsafe value (for that type of failsafe)
    int channelsCount;
    u32 hid_id; // USB HID id on the controller for RC control
-   u32 flags;
-          // bit 0: output to FC enabled
    u32 rcChAssignmentThrotleReverse;
    int iRCTranslationType;
-} rc_parameters_t;
+} __attribute__((packed)) rc_parameters_t;
 
 
 #define TELEMETRY_TYPE_NONE 0
@@ -408,9 +404,29 @@ typedef struct
    char interface_szMAC[MAX_RADIO_INTERFACES][MAX_MAC_LENGTH];
    char interface_szPort[MAX_RADIO_INTERFACES][MAX_RADIO_PORT_NAME_LENGTH]; // first byte - first char, sec byte - sec char
    u32  interface_capabilities_flags[MAX_RADIO_INTERFACES]; // what the card is used for: video/data/relay/tx/rx
+   u32  interface_supported_radio_flags[MAX_RADIO_INTERFACES]; // radio flags: legacy/MCS datarate type, frame type, STBC, LDP, MCS etc
    u32  interface_current_frequency_khz[MAX_RADIO_INTERFACES]; // current frequency for this card
-   u32  interface_current_radio_flags[MAX_RADIO_INTERFACES]; // radio flags: legacy/MCS datarate type, frame type, STBC, LDP, MCS etc
 } type_radio_interfaces_parameters;
+
+
+#define MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES 11
+// Paired 1 to 1 to radio interfaces. Same indexes
+typedef struct
+{
+   u8 uFlagsRuntimeCapab; // see flags.h MODEL_RUNTIME_*
+      // bit 0: computed
+
+   u8 uInterfaceFlags[MAX_RADIO_INTERFACES];
+      // bit 0: computed
+   int iMaxSupportedLegacyDataRate[MAX_RADIO_INTERFACES];
+   int iMaxSupportedMCSDataRate[MAX_RADIO_INTERFACES];
+
+   int iQualitiesLegacy[MAX_RADIO_INTERFACES][MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES];
+   int iQualitiesMCS[MAX_RADIO_INTERFACES][MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES];
+   // iQualities are stored as thousands of percentages: xx.yyy %, that is 1000 is 1%, 1020 is 1.020%, etc
+   int iMaxTxPowerMwLegacy[MAX_RADIO_INTERFACES][MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES];
+   int iMaxTxPowerMwMCS[MAX_RADIO_INTERFACES][MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES];
+} type_radio_interfaces_runtime_capabilities_parameters;
 
 
 typedef struct
@@ -424,35 +440,16 @@ typedef struct
 
    u32 link_frequency_khz[MAX_RADIO_INTERFACES];
    u32 link_capabilities_flags[MAX_RADIO_INTERFACES]; // data/video/both? rxtx/rx only/tx only
-   u32 link_radio_flags[MAX_RADIO_INTERFACES]; // radio flags: legacy/MCS datarate type, frame type, STBC, LDP, MCS, SIK flags, etc
+   u32 link_radio_flags_tx[MAX_RADIO_INTERFACES]; // downlink from this vehicle; radio flags: legacy/MCS datarate type, frame type, STBC, LDP, MCS, SIK flags, etc
+   u32 link_radio_flags_rx[MAX_RADIO_INTERFACES]; // uplink to this vehicle radio link
    int downlink_datarate_video_bps[MAX_RADIO_INTERFACES]; // 0: auto, -100: lowest, positive: bps, negative (-1 or less): MCS rate
    int downlink_datarate_data_bps[MAX_RADIO_INTERFACES]; // 0: auto, -100: lowest, positive: bps, negative (-1 or less): MCS rate
 
    u8  uSerialPacketSize[MAX_RADIO_INTERFACES]; // packet size over air for serial radio links
-   u32 uDummyR1[MAX_RADIO_INTERFACES];
    int uplink_datarate_video_bps[MAX_RADIO_INTERFACES]; // 0: auto, -100: lowest, positive: bps, negative (-1 or less): MCS rate
    int uplink_datarate_data_bps[MAX_RADIO_INTERFACES]; // 0: auto, -100: lowest, positive: bps, negative (-1 or less): MCS rate
    u8  uMaxLinkLoadPercent[MAX_RADIO_INTERFACES];
-
 } type_radio_links_parameters;
-
-#define MODEL_MAX_STORED_QUALITIES_LINKS 3
-#define MODEL_MAX_STORED_QUALITIES_VALUES 9
-typedef struct
-{
-   u8 uFlagsRuntimeCapab; // see flags.h MODEL_RUNTIME_*
-   // bit 0: computed
-   // bit 1: dirty
-
-   int iMaxSupportedLegacyDataRate;
-   int iMaxSupportedMCSDataRate;
-   u32 uSupportedMCSFlags;
-   float fQualitiesLegacy[MODEL_MAX_STORED_QUALITIES_LINKS][MODEL_MAX_STORED_QUALITIES_VALUES];
-   float fQualitiesMCS[MODEL_MAX_STORED_QUALITIES_LINKS][MODEL_MAX_STORED_QUALITIES_VALUES];
-   int iMaxTxPowerMwLegacy[MODEL_MAX_STORED_QUALITIES_LINKS][MODEL_MAX_STORED_QUALITIES_VALUES];
-   int iMaxTxPowerMwMCS[MODEL_MAX_STORED_QUALITIES_LINKS][MODEL_MAX_STORED_QUALITIES_VALUES];
-
-} type_radio_runtime_capabilities_parameters;
 
 typedef struct
 {
@@ -580,8 +577,8 @@ class Model
       // Radio interfaces parameters are checked/re-computed when the vehicle starts.
 
       type_radio_interfaces_parameters radioInterfacesParams;
+      type_radio_interfaces_runtime_capabilities_parameters radioInterfacesRuntimeCapab;
       type_radio_links_parameters radioLinksParams;
-      type_radio_runtime_capabilities_parameters radioRuntimeCapabilities;
       type_logging_parameters loggingParams;
       bool enableDHCP;
 
@@ -633,7 +630,7 @@ class Model
       void resetProcessesParams();
       void disableProcessesParams();
       void resetRadioLinksParams();
-      void resetRadioCapabilitiesRuntime(type_radio_runtime_capabilities_parameters* pRTInfo);
+      void resetRadioInterfacesRuntimeCapabilities(type_radio_interfaces_runtime_capabilities_parameters* pRTInfo);
       void resetOSDFlags(int iScreen = -1);
       void resetOSDStatsFlags(int iScreen = -1);
       void resetOSDScreenToLayout(int iScreen, int iLayout);
@@ -660,6 +657,7 @@ class Model
       bool validateProcessesParams();
 
       int getRadioInterfaceIndexForRadioLink(int iRadioLink);
+      void swapRadioInterfaces(int iRadioInterface1, int iRadioInterface2);
       bool canSwapEnabledHighCapacityRadioInterfaces();
       bool swapEnabledHighCapacityRadioInterfaces();
       int getLastSwappedRadioInterface1();
@@ -673,7 +671,6 @@ class Model
       int hasRadioCardsRTL8812AU();
       int hasRadioCardsRTL8812EU();
       int hasRadioCardsAtheros();
-      bool isRadioDataRateSupportedByRadioLink(int iRadioLinkId, int iDataRate);
 
       bool hasCamera();
       char* getCameraName(int iCameraIndex);
@@ -700,7 +697,7 @@ class Model
       u32 getMaxVideoBitrateSupportedForRadioLinks(type_radio_links_parameters* pRadioLinksParams, video_parameters_t* pVideoParams, type_video_link_profile* pVideoProfiles);
       u32 getMaxVideoBitrateForRadioDatarate(int iRadioDatarateBPS, int iRadioLinkIndex);
       u32 getUsableVideoBitrateFromTotalBitrate(u32 uTotalBitrate, u32 uLoadPercent);
-      int getRadioDataRateForVideoBitrate(u32 uVideoBitrateBPS, int iRadioLinkIndex, bool bLog);
+      int getRequiredRadioDataRateForVideoBitrate(u32 uVideoBitrateBPS, int iRadioLinkIndex, bool bLog);
       u32 getVideoProfileInitialVideoBitrate(int iVideoProfile);
       void setVideoProfilesDefaultVideoBitrates();
       bool validateVideoProfilesMaxVideoBitrate();
@@ -737,6 +734,7 @@ class Model
       void copy_radio_interface_params(int iFrom, int iTo);
 
       bool onControllerIdUpdated(u32 uNewControllerId);
+      void resetNegociatedRadioAndRadioCapabilitiesFlags();
 
    private:
       char vehicle_long_name[256];
@@ -746,7 +744,8 @@ class Model
       void generateUID();
       bool loadVersion10(FILE* fd); // from 7.6
       bool loadVersion11(FILE* fd); // from 11.5
-      bool saveVersion11(FILE* fd, bool isOnController); // from 11.5
+      bool loadVersion12(FILE* fd); // from 11.7.07
+      bool saveVersion12(FILE* fd, bool isOnController); // from 11.7.07
 };
 
 const char* model_getShortFlightMode(u8 mode);

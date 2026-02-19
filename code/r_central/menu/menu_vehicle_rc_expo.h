@@ -37,6 +37,6 @@ class MenuVehicleRCExpo: public Menu
       t_menu_group_rc_expo m_ItemsChannels[24];
       int m_ChannelCount;
 
-      float m_fDisplayCurveValues[DISPLAY_CURVE_VALUES];
+      int m_iDisplayCurveValues[DISPLAY_CURVE_VALUES];
       int m_IndexComputedChannel;
 };

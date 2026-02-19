@@ -453,9 +453,9 @@ void _process_local_notification_model_changed(t_packet_header* pPH, u8 uChangeT
       int iLink = (pPH->vehicle_id_src >> 16) & 0xFF;
       log_line("Received notification that radio link flags where changed for radio link %d.", iLink+1);
       
-      u32 radioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[iLink];
       log_line("Radio link %d new datarates: %d/%d", iLink+1, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[iLink], g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[iLink]);
-      log_line("Radio link %d new radio flags: %s", iLink+1, str_get_radio_frame_flags_description2(radioFlags));
+      log_line("Radio link %d new radio tx flags: %s", iLink+1, str_get_radio_frame_flags_description2(g_pCurrentModel->radioLinksParams.link_radio_flags_tx[iLink]));
+      log_line("Radio link %d new radio rx flags: %s", iLink+1, str_get_radio_frame_flags_description2(g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iLink]));
    
       if( (NULL != g_pCurrentModel) && g_pCurrentModel->radioLinkIsSiKRadio(iLink) )
       {
@@ -569,6 +569,9 @@ void _process_local_notification_model_changed(t_packet_header* pPH, u8 uChangeT
             oldRelayParams.isRelayEnabledOnRadioLinkId, g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId);
          reasign_radio_links(false);
       }
+
+      if ( -1 != g_fIPCToRC )
+         ruby_ipc_channel_send_message(g_fIPCToRC, (u8*)pPH, pPH->total_length);
       return;
    }
 
@@ -867,7 +870,7 @@ void process_local_control_packet(u8* pPacketBuffer)
       for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )
          radio_rx_pause_interface(i, "Controller search freq changed");
       log_line("Paused radio rx interfaces.");
-      links_set_cards_frequencies_for_search((int)pPH->vehicle_id_dest, false, -1,-1,-1,-1 );
+      radio_links_set_cards_frequencies_for_search((int)pPH->vehicle_id_dest, false, -1,-1,-1,-1 );
       hardware_save_radio_info();
       g_uSearchFrequency = pPH->vehicle_id_dest;
       log_line("Switched search frequency to %s. Broadcasting that router is ready.", str_format_frequency(pPH->vehicle_id_dest));
@@ -895,7 +898,7 @@ void process_local_control_packet(u8* pPacketBuffer)
             if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] == (int)uLinkId )
                g_pCurrentModel->radioInterfacesParams.interface_current_frequency_khz[i] = uNewFreq;
          }
-         links_set_cards_frequencies_and_params((int)uLinkId);
+         radio_links_set_cards_frequencies_and_params((int)uLinkId);
          discardRetransmissionsInfoAndBuffersOnLengthyOp();
       }
       hardware_save_radio_info();

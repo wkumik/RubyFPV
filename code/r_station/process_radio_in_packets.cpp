@@ -121,34 +121,45 @@ int _process_received_ruby_message(int iRuntimeIndex, int iInterfaceIndex, u8* p
       return 0;
    }
 
-   if ( uPacketType == PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED )
+   if ( uPacketType == PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG )
    {
-      log_line("Received vehicle's current radio configuration from vehicle uid %u, packet size: %d bytes.", uVehicleIdSrc, iTotalLength);
-      if ( ! is_sw_version_atleast(pModel, 11, 7) )
-      {
-         log_line("Vehicle SW version is too old (%d.%d). Ignore this vehicle radio config update.", get_sw_version_major(pModel), get_sw_version_minor(pModel));
-         return 0;
-      }
-      if ( iTotalLength < (int)(sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters)) )
-      {
-         log_softerror_and_alarm("Received vehicle's current radio configuration: invalid packet size. Ignoring.");
-         return 0;
-      }
       if ( NULL == g_pCurrentModel )
          return 0;
+
+      u8 uType = pPacketBuffer[sizeof(t_packet_header)];
+      type_relay_parameters relayParams;
+      type_radio_interfaces_parameters radioInt;
+      type_radio_links_parameters radioLinks;
+      type_radio_interfaces_runtime_capabilities_parameters runtimeCapabParams;
+
+      if ( 0 == uType )
+      {
+         if ( iTotalLength != (int)(sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters)) )
+         {
+            log_softerror_and_alarm("Received vehicle's current radio configuration: invalid packet size. Ignoring.");
+            return 0;
+         }
+         memcpy(&relayParams, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8), sizeof(type_relay_parameters));
+         memcpy(&radioInt, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters));
+         memcpy(&radioLinks, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters));
+      }
+      if ( 1 == uType )
+      {
+         if ( iTotalLength != (int)(sizeof(t_packet_header) + sizeof(u8) + sizeof(type_radio_interfaces_runtime_capabilities_parameters)) )
+         {
+            log_softerror_and_alarm("Received vehicle's current radio configuration: invalid packet size. Ignoring.");
+            return 0;
+         }
+         memcpy(&runtimeCapabParams, pPacketBuffer + sizeof(t_packet_header) + sizeof(u8), sizeof(type_radio_interfaces_runtime_capabilities_parameters));
+      }
+
       bool bRadioConfigChangedForCurentModel = false;
       if ( g_pCurrentModel->uVehicleId == uVehicleIdSrc )
       {
          log_line("Received vehicle's radio config is for current vehicle. Update radio config.");
-         type_radio_interfaces_parameters radioInt;
-         type_radio_links_parameters radioLinks;
-         memcpy(&radioInt, pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters));
-         memcpy(&radioLinks, pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters));
-
-         if ( iTotalLength >= (int)(sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters) + sizeof(type_radio_runtime_capabilities_parameters)) )
-            memcpy(&g_pCurrentModel->radioRuntimeCapabilities, pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters), sizeof(type_radio_runtime_capabilities_parameters));
-      
-         bRadioConfigChangedForCurentModel = IsModelRadioConfigChanged(&(g_pCurrentModel->radioLinksParams), &(g_pCurrentModel->radioInterfacesParams),
+         
+         if ( 0 == uType )
+            bRadioConfigChangedForCurentModel = IsModelRadioConfigChanged(&(g_pCurrentModel->radioLinksParams), &(g_pCurrentModel->radioInterfacesParams),
                   &radioLinks, &radioInt);
          log_line("Vehicle's radio configuration %s", bRadioConfigChangedForCurentModel?"has changed.":"is unchanged.");
          if ( bRadioConfigChangedForCurentModel )
@@ -157,23 +168,41 @@ int _process_received_ruby_message(int iRuntimeIndex, int iInterfaceIndex, u8* p
       else
          log_line("Received vehicle's current radio configuration is for a different vehicle (VID %u) than the current vehicle (VID %u)",
             uVehicleIdSrc, g_pCurrentModel->uVehicleId );
-      memcpy(&(pModel->relay_params), pPacketBuffer + sizeof(t_packet_header), sizeof(type_relay_parameters));
-      memcpy(&(pModel->radioInterfacesParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters), sizeof(type_radio_interfaces_parameters));
-      memcpy(&(pModel->radioLinksParams), pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters), sizeof(type_radio_links_parameters));
-      if ( iTotalLength >= (int)(sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters) + sizeof(type_radio_runtime_capabilities_parameters)) )
-         memcpy(&pModel->radioRuntimeCapabilities, pPacketBuffer + sizeof(t_packet_header) + sizeof(type_relay_parameters) + sizeof(type_radio_interfaces_parameters) + sizeof(type_radio_links_parameters), sizeof(type_radio_runtime_capabilities_parameters));
-      pModel->validateRadioSettings();
-      saveControllerModel(pModel);
-
-      pPH->packet_flags = PACKET_COMPONENT_LOCAL_CONTROL;
-      ruby_ipc_channel_send_message(g_fIPCToCentral, (u8*)pPH, pPH->total_length);
-      if ( NULL != g_pProcessStats )
-         g_pProcessStats->lastIPCOutgoingTime = g_TimeNow;
-
-      if ( bRadioConfigChangedForCurentModel )
+      bool bIdentical = false;
+      if ( 0 == uType )
       {
-         log_line("Current vehicle radio config was updated. Reassigning radio links...");
-         reasign_radio_links(false);
+         if ( 0 == memcmp(&(pModel->relay_params), &relayParams, sizeof(type_relay_parameters)) )
+         if ( 0 == memcmp(&(pModel->radioInterfacesParams), &radioInt, sizeof(type_radio_interfaces_parameters)) )
+         if ( 0 == memcmp(&(pModel->radioLinksParams), &radioLinks, sizeof(type_radio_links_parameters)) )
+            bIdentical = true;
+         if ( ! bIdentical )
+         {
+            memcpy(&(pModel->relay_params), &relayParams, sizeof(type_relay_parameters));
+            memcpy(&(pModel->radioInterfacesParams), &radioInt, sizeof(type_radio_interfaces_parameters));
+            memcpy(&(pModel->radioLinksParams), &radioLinks, sizeof(type_radio_links_parameters));
+         }
+      }
+      if ( 1 == uType )
+      {
+         if ( 0 == memcmp(&pModel->radioInterfacesRuntimeCapab, &runtimeCapabParams, sizeof(type_radio_interfaces_runtime_capabilities_parameters)) )
+            bIdentical = true;
+         if ( ! bIdentical )
+            memcpy(&pModel->radioInterfacesRuntimeCapab, &runtimeCapabParams, sizeof(type_radio_interfaces_runtime_capabilities_parameters));
+      }
+      if ( pModel->validateRadioSettings() || (!bIdentical) || bRadioConfigChangedForCurentModel )
+      {
+         saveControllerModel(pModel);
+
+         pPH->packet_flags = PACKET_COMPONENT_LOCAL_CONTROL;
+         ruby_ipc_channel_send_message(g_fIPCToCentral, (u8*)pPH, pPH->total_length);
+         if ( NULL != g_pProcessStats )
+            g_pProcessStats->lastIPCOutgoingTime = g_TimeNow;
+
+         if ( bRadioConfigChangedForCurentModel )
+         {
+            log_line("Current vehicle radio config was updated. Reassigning radio links...");
+            reasign_radio_links(false);
+         }
       }
       log_line("Done processing received vehicle's radio config.");
       return 0;
@@ -893,6 +922,7 @@ void process_received_single_radio_packet(int iInterfaceIndex, u8* pData, int iD
       if ( g_SM_RadioStats.radio_interfaces[iInterfaceIndex].lastRecvDataRateVideo < g_SMControllerRTInfo.iRecvVideoDataRate[g_SMControllerRTInfo.iCurrentIndex][iInterfaceIndex] )
          g_SMControllerRTInfo.iRecvVideoDataRate[g_SMControllerRTInfo.iCurrentIndex][iInterfaceIndex] = g_SM_RadioStats.radio_interfaces[iInterfaceIndex].lastRecvDataRateVideo;
    }
+
    if ( NULL != g_pProcessStats )
    {
       // Added in radio_rx thread too
@@ -923,10 +953,15 @@ void process_received_single_radio_packet(int iInterfaceIndex, u8* pData, int iD
       return;
    }
 
-   Model* pModel = findModelWithId(uVehicleIdSrc, 355);
+   static int s_iErrorCountInvalidModel = 0;
+   Model* pModel = findModelWithId2(uVehicleIdSrc, 355, (s_iErrorCountInvalidModel<100)?true:false);
    if ( NULL == pModel )
    {
-      log_softerror_and_alarm("Received radio packet from unknown vehicle while not searching.");
+      s_iErrorCountInvalidModel++;
+      if ( s_iErrorCountInvalidModel < 10 )
+         send_alarm_to_central(ALARM_ID_GENERIC, ALARM_ID_GENERIC_TYPE_UNKNOWN_VEHICLE, get_model_main_connect_frequency(g_pCurrentModel->uVehicleId));
+
+      log_softerror_and_alarm("Received radio packet from unknown vehicle while regular paired (not searching)");
       logCurrentVehiclesRuntimeInfo();
       return;
    }
@@ -1167,7 +1202,7 @@ void process_received_single_radio_packet(int iInterfaceIndex, u8* pData, int iD
       {
          if ( pPHCR->origin_command_counter != g_uLastInterceptedCommandCounterToSetRadioFlags )
          {
-            log_line("Intercepted command response Ok to command sent to set radio flags and radio data datarate on radio link %u to %u bps (%d datarate).", g_uLastRadioLinkIndexForSentSetRadioLinkFlagsCommand+1, getRealDataRateFromRadioDataRate(g_iLastRadioLinkDataRateSentForSetRadioLinkFlagsCommand, g_pCurrentModel->radioLinksParams.link_radio_flags[g_uLastRadioLinkIndexForSentSetRadioLinkFlagsCommand], 1), g_iLastRadioLinkDataRateSentForSetRadioLinkFlagsCommand);
+            log_line("Intercepted command response Ok to command sent to set radio flags and radio data datarate on radio link %u to %u bps (%d datarate).", g_uLastRadioLinkIndexForSentSetRadioLinkFlagsCommand+1, getRealDataRateFromRadioDataRate(g_iLastRadioLinkDataRateSentForSetRadioLinkFlagsCommand, g_pCurrentModel->radioLinksParams.link_radio_flags_tx[g_uLastRadioLinkIndexForSentSetRadioLinkFlagsCommand], 1), g_iLastRadioLinkDataRateSentForSetRadioLinkFlagsCommand);
             g_uLastInterceptedCommandCounterToSetRadioFlags = pPHCR->origin_command_counter;
 
             for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )

@@ -700,7 +700,7 @@ void link_watch_loop_telemetry()
          // RC failsafe changed ?
 
          #ifdef FEATURE_ENABLE_RC
-         if ( ( g_VehiclesRuntimeInfo[i].headerFCTelemetry.uFCFlags & FC_TELE_FLAGS_RC_FAILSAFE ) ||
+         if ( ( g_VehiclesRuntimeInfo[i].bGotFCTelemetryFull && (g_VehiclesRuntimeInfo[i].headerFCTelemetry.uFCFlags & FC_TELE_FLAGS_RC_FAILSAFE) ) ||
               (g_VehiclesRuntimeInfo[i].bGotRubyTelemetryInfo && (g_VehiclesRuntimeInfo[i].headerRubyTelemetryExtended.uRubyFlags & FLAG_RUBY_TELEMETRY_RC_FAILSAFE) ) )
          {
             if ( ! g_VehiclesRuntimeInfo[i].bRCFailsafeState )
@@ -1060,7 +1060,7 @@ void link_watch_rc()
 {
    if ( g_bSearching )
       return;
-   if ( NULL == g_pCurrentModel || (!g_pCurrentModel->rc_params.rc_enabled) || g_pCurrentModel->is_spectator )
+   if ( NULL == g_pCurrentModel || (! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) ) || g_pCurrentModel->is_spectator )
       return;
    if ( ! pairing_isStarted() )
       return;
@@ -1072,9 +1072,9 @@ void link_watch_rc()
    if ( s_TimeLastWarningRCHID != 0 && g_TimeNow < s_TimeLastWarningRCHID+20000 )
       return;
 
-   if ( g_pCurrentModel->rc_params.rc_enabled )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
    {
-      if ( g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED )
       {
          if ( ! s_bLinkWatchIsRCOutputEnabled )
             notification_add_rc_output_enabled();
@@ -1114,6 +1114,22 @@ void link_watch_rc()
       {
           s_TimeLastWarningRCHID = g_TimeNow;
           warnings_add(g_pCurrentModel->uVehicleId, L("RC is enabled on current vehicle and the detected RC input controller device is different from the one setup on the vehicle!"), g_idIconJoystick, get_Color_IconError());
+          if ( NULL != g_pCurrentModel )
+          {
+             log_line("Can't find input interface UID %u currently assigned to current model.", g_pCurrentModel->rc_params.hid_id);
+             ControllerInterfacesSettings* pCIS = get_ControllerInterfacesSettings();
+             if ( pCIS->inputInterfacesCount > 0 )
+                log_line("CtrlInterfaces: Loaded %d input interfaces:", pCIS->inputInterfacesCount);
+             else
+                log_line("CtrlInterfaces: Loaded %d input interfaces.", pCIS->inputInterfacesCount);
+
+             for( int i=0; i<pCIS->inputInterfacesCount; i++ )
+             {
+                log_line("CtrlInterfaces: Input interface %d: UID: %u, calibrated: %s, name: %s",
+                   i+1, pCIS->inputInterfaces[i].uId, pCIS->inputInterfaces[i].bCalibrated?"Yes":"No",
+                   pCIS->inputInterfaces[i].szInterfaceName);
+             }
+          }
           return;
       }
    }

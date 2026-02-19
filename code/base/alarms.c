@@ -214,6 +214,7 @@ void alarms_to_string(u32 uAlarms, u32 uFlags1, u32 uFlags2, char* szOutput)
          case ALARM_ID_GENERIC_TYPE_RELAYED_TELEMETRY_RECOVERED: strcpy(szFlags1, "ALARM_ID_GENERIC_TYPE_RELAYED_TELEMETRY_RECOVERED"); break;
          case ALARM_ID_GENERIC_TYPE_WRONG_OPENIPC_KEY: strcpy(szFlags1, "ALARM_ID_GENERIC_TYPE_WRONG_OPENIPC_KEY"); break;
          case ALARM_ID_GENERIC_TYPE_MISSED_TELEMETRY_DATA: strcpy(szFlags1, "ALARM_ID_GENERIC_TYPE_MISSED_TELEMETRY_DATA"); break;
+         case ALARM_ID_GENERIC_TYPE_UNKNOWN_VEHICLE: strcpy(szFlags1, "ALARM_ID_GENERIC_TYPE_UNKNOWN_VEHICLE"); break;
          default: sprintf(szFlags1, "Unknown (%u)", uFlags1);
 
       }

@@ -805,8 +805,8 @@ bool MenuVehicleVideoEncodings::sendVideoParams()
    char szCurrentProfile[64];
    strcpy(szCurrentProfile, str_get_video_profile_name(g_pCurrentModel->video_params.iCurrentVideoProfile));
 
-   if ( g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED ) 
-      log_line("MenuVehicleVideoEncodings: Currently computed max supported datarates: MCS: %d, legacy: %d", g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate, g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedLegacyDataRate);
+   if ( g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED ) 
+      log_line("MenuVehicleVideoEncodings: Currently computed max supported datarates: MCS: %d, legacy: %d", g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[0], g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedLegacyDataRate[0]);
    else
       log_line("MenuVehicleVideoEncodings: Currently maxc supported datarates are not computed.");
    log_line("MenuVehicleVideoEncodings: Current DR boost: %d, new DR boost: %d", iCurrentDRBoost, m_pItemsSelect[16]->getSelectedIndex());

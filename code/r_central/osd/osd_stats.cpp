@@ -2146,9 +2146,9 @@ float osd_render_stats_rc(float xPos, float yPos, float scale)
 
    g_pRenderEngine->drawText(xPos, y, s_idFontStats, "Active Link:");
    strcpy(szBuff, "Ruby RC");
-   if ( ! osd_get_current_data_source_vehicle_model()->rc_params.rc_enabled )
+   if ( ! (osd_get_current_data_source_vehicle_model()->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       strcpy(szBuff, "External");
-   if ( NULL != osd_get_current_data_source_vehicle_model() && ((osd_get_current_data_source_vehicle_model()->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
+   if ( NULL != osd_get_current_data_source_vehicle_model() && ((osd_get_current_data_source_vehicle_model()->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
       strcpy(szBuff, "External");
 
    g_pRenderEngine->drawTextLeft( rightMargin, y, s_idFontStats, szBuff);
@@ -2172,7 +2172,7 @@ float osd_render_stats_rc(float xPos, float yPos, float scale)
    float widthBar = (float)widthMax / (float)RC_INFO_HISTORY_SIZE;
    int maxGap = 0;
 
-   if ( ! osd_get_current_data_source_vehicle_model()->rc_params.rc_enabled )
+   if ( ! (osd_get_current_data_source_vehicle_model()->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
    {
       g_pRenderEngine->drawText(xPos, y, s_idFontStats, "RC link is disabled");
       y += height_text*s_OSDStatsLineSpacing;
@@ -2253,9 +2253,9 @@ float osd_render_stats_rc(float xPos, float yPos, float scale)
    osd_set_colors();
 
    bool bShowMAVLink = false;
-   if ( NULL != osd_get_current_data_source_vehicle_model() && ( ! osd_get_current_data_source_vehicle_model()->rc_params.rc_enabled ) )
+   if ( NULL != osd_get_current_data_source_vehicle_model() && ( ! (osd_get_current_data_source_vehicle_model()->rc_params.uRCFlags & RC_FLAGS_ENABLED) ) )
       bShowMAVLink = true;
-   else if ( NULL != osd_get_current_data_source_vehicle_model() && ((osd_get_current_data_source_vehicle_model()->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
+   else if ( NULL != osd_get_current_data_source_vehicle_model() && ((osd_get_current_data_source_vehicle_model()->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
       bShowMAVLink = true;
    if ( g_SM_DownstreamInfoRC.is_failsafe )   
    if ( NULL != osd_get_current_data_source_vehicle_model() && osd_get_current_data_source_vehicle_model()->rc_params.failsafeFlags == RC_FAILSAFE_NOOUTPUT )
@@ -2306,7 +2306,7 @@ float osd_render_stats_rc(float xPos, float yPos, float scale)
    y += height_text*s_OSDStatsLineSpacing;
    y += height_text*0.3;
 
-   if ( ! g_pCurrentModel->rc_params.rc_enabled )
+   if ( ! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
       return height;
 
    g_pRenderEngine->drawText(xPos, y, s_idFontStats, "Recv frames:");

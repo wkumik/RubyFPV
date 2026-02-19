@@ -30,6 +30,7 @@ type_u32_couters g_CoutersMainLoop;
 u32 s_debugVideoBlocksInCount = 0;
 
 t_packet_queue g_QueueRadioPacketsOut;
+t_packet_queue g_QueueRelayRadioPacketsOutToRelayedVehicle;
 VideoTxPacketsBuffer* g_pVideoTxBuffers = NULL;
 ProcessorTxVideo* g_pProcessorTxVideo = NULL;
 ProcessorTxAudio* g_pProcessorTxAudio = NULL;

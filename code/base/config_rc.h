@@ -30,7 +30,8 @@
 
 // rc_params.flags fields:
 
-#define RC_FLAGS_OUTPUT_ENABLED  0x01 // bit 0
+#define RC_FLAGS_ENABLED  ((u32)(((u32)0x01)<<4))
+#define RC_FLAGS_OUTPUT_ENABLED  ((u32)(((u32)0x01)<<5))
 
 
 #define DEFAULT_RC_FRAMES_PER_SECOND 20

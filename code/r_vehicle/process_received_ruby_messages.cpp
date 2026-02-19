@@ -34,6 +34,7 @@
 #include "shared_vars.h"
 #include "../base/models_list.h"
 #include "../base/ruby_ipc.h"
+#include "../base/hardware_files.h"
 #include "../base/hardware_cam_maj.h"
 #include "../base/hardware_radio_sik.h"
 #include "../common/radio_stats.h"
@@ -102,7 +103,7 @@ int _process_received_ping_messages(int iInterfaceIndex, u8* pPacketBuffer)
          memcpy(packet, pPacketBuffer, pPH->total_length);
          t_packet_header* pPHForward = (t_packet_header*)&packet[0];
          pPHForward->vehicle_id_dest = g_pCurrentModel->relay_params.uRelayedVehicleId;
-         relay_send_single_packet_to_relayed_vehicle(packet, pPHForward->total_length);
+         relay_queue_single_packet_to_relayed_vehicle(packet, pPHForward->total_length);
          //if ( pPHForward->packet_flags & PACKET_FLAGS_BIT_HIGH_PRIORITY )
          //   send_packet_to_radio_interfaces(packet, pPHForward->total_length, -1);
          //else
@@ -194,13 +195,14 @@ int process_received_ruby_message_from_controller(int iInterfaceIndex, u8* pPack
          char szFile[128];
          strcpy(szFile, FOLDER_CONFIG);
          strcat(szFile, FILE_CONFIG_CONTROLLER_ID);
+         hardware_file_check_and_fix_access(szFile);
          FILE* fd = fopen(szFile, "w");
          if ( NULL != fd )
          {
             fprintf(fd, "%u\n", g_uControllerId);
             fclose(fd);
          }
-
+         hardware_file_check_and_fix_access(szFile);
          radio_duplicate_detection_remove_data_for_vid(uOldControllerId);
          radio_stats_remove_received_info_for_vid(&g_SM_RadioStats, uOldControllerId);
          bUpdated = true;
@@ -240,7 +242,7 @@ int process_received_ruby_message_from_controller(int iInterfaceIndex, u8* pPack
       memcpy(packet+sizeof(t_packet_header), &s_uResendPairingConfirmationCounter, sizeof(u32));
       memcpy(packet+sizeof(t_packet_header)+sizeof(u32), &uVersion, sizeof(u16));
       packets_queue_add_packet(&g_QueueRadioPacketsOut, packet);
-      send_radio_config_to_controller();
+      flag_send_radio_config_to_controller();
 
       if ( (uDeveloperFlags != 0xFFFFFFFF) )
          checkDeveloperFlagsChanges(uOldDeveloperFlags, uDeveloperFlags);
@@ -248,7 +250,7 @@ int process_received_ruby_message_from_controller(int iInterfaceIndex, u8* pPack
       // Forward to other components
       ruby_ipc_channel_send_message(s_fIPCRouterToCommands, pPacketBuffer, pPH->total_length);
       ruby_ipc_channel_send_message(s_fIPCRouterToTelemetry, pPacketBuffer, pPH->total_length);
-      if ( g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, pPacketBuffer, pPH->total_length);
       return 0;
    }

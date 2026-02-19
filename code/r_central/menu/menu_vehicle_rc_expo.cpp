@@ -55,7 +55,7 @@ MenuVehicleRCExpo::MenuVehicleRCExpo(void)
       //m_ItemsChannels[i].pItemTitle = new MenuItem(szBuff);
       //m_ItemsChannels[i].m_IndexTitle = addMenuItem(m_ItemsChannels[i].pItemTitle);
 
-      m_ItemsChannels[i].pItemValue = new MenuItemRange(szBuff, "Set an exponential curve value for this RC channel.", 0, 80, 0, 1 );
+      m_ItemsChannels[i].pItemValue = new MenuItemRange(szBuff, "Set an exponential curve value for this RC channel.", 0, 90, 0, 1 );
       m_ItemsChannels[i].pItemValue->setSufix("%");
       m_ItemsChannels[i].m_IndexValue = addMenuItem(m_ItemsChannels[i].pItemValue);
    }
@@ -90,8 +90,7 @@ void MenuVehicleRCExpo::computeDisplayCurve(int nChannel)
    for( int i=0; i<DISPLAY_CURVE_VALUES; i++ )
    {
       float fPercent = (float)i/(float)(DISPLAY_CURVE_VALUES-1);
-      //m_fDisplayCurveValues[i] = 1000 + fPercent*1000.0;
-      m_fDisplayCurveValues[i] = compute_output_rc_value(g_pCurrentModel, m_IndexComputedChannel, 0.01, fPercent, 2);
+      m_iDisplayCurveValues[i] = compute_output_rc_value(g_pCurrentModel, m_IndexComputedChannel, 0, fPercent, 2);
    }
 }
 
@@ -158,8 +157,8 @@ void MenuVehicleRCExpo::Render()
       float percent2 = ((float)i+1)/(float)(DISPLAY_CURVE_VALUES-1);
       float x1 = xPosGraph + fWidthGraph*percent1;
       float x2 = xPosGraph + fWidthGraph*percent2;
-      float y1 = yPosGraph + fHeightGraph - fHeightGraph * (m_fDisplayCurveValues[i]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel])/((g_pCurrentModel->rc_params.rcChMax[m_IndexComputedChannel]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel]));
-      float y2 = yPosGraph + fHeightGraph - fHeightGraph * (m_fDisplayCurveValues[i+1]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel])/((g_pCurrentModel->rc_params.rcChMax[m_IndexComputedChannel]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel]));
+      float y1 = yPosGraph + fHeightGraph - fHeightGraph * (m_iDisplayCurveValues[i] - g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel])/((g_pCurrentModel->rc_params.rcChMax[m_IndexComputedChannel]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel]));
+      float y2 = yPosGraph + fHeightGraph - fHeightGraph * (m_iDisplayCurveValues[i+1] - g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel])/((g_pCurrentModel->rc_params.rcChMax[m_IndexComputedChannel]-g_pCurrentModel->rc_params.rcChMin[m_IndexComputedChannel]));
       g_pRenderEngine->drawLine(x1,y1,x2,y2);
    }
 }

@@ -108,6 +108,8 @@ static pthread_mutex_t s_MutexRadioRxFrameTimings = PTHREAD_MUTEX_INITIALIZER;
 static u32 s_uRadioRxCurrentFrameStartTime = 0;
 static u32 s_uRadioRxCurrentFrameEndTime = 0;
 static u16 s_uRadioRxCurrentFrameNumber = 0;
+static int s_iIsEOFDetected = 0;
+static u32 s_uRadioRxLastTimeCheckedForFrameEOF = 0;
 
 t_radio_rx_state_vehicle* _radio_rx_get_stats_structure_for_vehicle(u32 uVehicleId)
 {
@@ -343,6 +345,79 @@ u16 radio_rx_get_current_frame_number()
    uFrame = s_uRadioRxCurrentFrameNumber;
    pthread_mutex_unlock(&s_MutexRadioRxFrameTimings);
    return uFrame;
+}
+
+int radio_rx_is_eof_detected()
+{
+   return s_iIsEOFDetected;
+}
+
+void radio_rx_check_update_eof(u32 uTimeNow, u32 uTimeGuard, u32 uVideoFPS, u32 uMaxRetrWindow)
+{
+   if ( uTimeNow == s_uRadioRxLastTimeCheckedForFrameEOF )
+      return;
+   s_uRadioRxLastTimeCheckedForFrameEOF = uTimeNow;
+
+   u32 uLastDetectedFrameStartTime = radio_rx_get_current_frame_start_time();
+   u32 uLastDetectedFrameEndTime = radio_rx_get_current_frame_end_time();
+   u32 uTimeEOFWithGuard = uLastDetectedFrameEndTime + uTimeGuard;
+
+   u32 uMilisPerFrame = 33;
+   if ( uVideoFPS > 0 )
+      uMilisPerFrame = 1000/uVideoFPS;
+
+   if ( (uTimeNow < uTimeEOFWithGuard) || (uTimeNow > uLastDetectedFrameEndTime + uMaxRetrWindow + uMilisPerFrame) ||
+        (uTimeNow < uLastDetectedFrameStartTime) || (uTimeNow > uLastDetectedFrameStartTime + uMaxRetrWindow + 2*uMilisPerFrame) )
+   {
+      s_iIsEOFDetected = 0;
+      return;
+   }
+
+   if ( uTimeNow >= uTimeEOFWithGuard )
+   if ( uTimeNow < uLastDetectedFrameStartTime + uMilisPerFrame )
+   if ( uLastDetectedFrameStartTime <= uLastDetectedFrameEndTime )
+   {
+      s_iIsEOFDetected = 1;
+      return;
+   }
+
+   if ( (uTimeNow >= uTimeEOFWithGuard) && (uTimeNow <= uLastDetectedFrameEndTime + uMaxRetrWindow) )
+   {
+      /*
+      log_line("DBG check for EOF update on older frames (last detected frame start was %u ms ago, last EOF with guard was %u ms ago, last detected EOF was %u ms ago, max retr window is %d ms)...",
+          uTimeNow - uLastDetectedFrameStartTime,
+          uTimeNow - uTimeEOFWithGuard, uTimeNow - uLastDetectedFrameEndTime,
+          uMaxRetrWindow);
+      */
+      u32 uTimeFrameStart = uLastDetectedFrameStartTime;
+      u32 uTimeFrameEnd = uTimeEOFWithGuard;
+      if ( uTimeFrameEnd < uTimeFrameStart + 5 )
+         uTimeFrameEnd = uTimeFrameStart+5;
+      int iCount = 0;
+      uTimeFrameStart += uMilisPerFrame;
+      uTimeFrameEnd += uMilisPerFrame;
+      while ( (uTimeFrameStart < uTimeNow) && (iCount < 10) )
+      {
+         /*
+         if ( uTimeNow >= uTimeFrameEnd )
+            log_line("DBG check foe EOF update on older frame %d: started %u ms ago, ended %u ms ago",
+               iCount, uTimeNow - uTimeFrameStart, uTimeNow - uTimeFrameEnd);
+         else
+            log_line("DBG check foe EOF update on older frame %d: will start %u ms from now, will end %u ms from now",
+               iCount, uTimeFrameStart - uTimeNow, uTimeFrameEnd - uTimeNow);
+         */
+         if ( uTimeNow >= uTimeFrameEnd )
+         if ( uTimeNow < uTimeFrameStart + uMilisPerFrame )
+         {
+            s_iIsEOFDetected = 1;
+            return;
+         }
+         iCount++;
+         uTimeFrameStart += uMilisPerFrame;
+         uTimeFrameEnd += uMilisPerFrame;
+      }
+   }
+   s_iIsEOFDetected = 0; 
 }
 
 u8* radio_rx_wait_get_next_received_high_prio_packet(u32 uTimeoutMicroSec, int* pLength, int* pIsShortPacket, int* pRadioInterfaceIndex)
@@ -736,9 +811,9 @@ int _radio_rx_parse_received_wifi_radio_data(int iInterfaceIndex, int iMaxReads)
       // Save received radio datarate as we don't need the CRC anymore
       pPH->uCRC = (u32)iRxDatarate;
 
-      if ( (pPH->packet_type == PACKET_TYPE_VIDEO_DATA) )
       if ( (pPH->packet_flags & PACKET_FLAGS_MASK_MODULE) == PACKET_COMPONENT_VIDEO )
       if ( !(pPH->packet_flags & PACKET_FLAGS_BIT_RETRANSMITED) )
+      if ( (pPH->packet_type == PACKET_TYPE_VIDEO_DATA) )
          _radio_rx_update_frame_times(pPacketBuffer, iRxDatarate);
 
       if ( uPacketType == PACKET_TYPE_VIDEO_DATA )

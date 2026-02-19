@@ -55,6 +55,7 @@ extern type_u32_couters g_CoutersMainLoop;
 extern u32 s_debugVideoBlocksInCount;
 
 extern t_packet_queue g_QueueRadioPacketsOut;
+extern t_packet_queue g_QueueRelayRadioPacketsOutToRelayedVehicle;
 extern VideoTxPacketsBuffer* g_pVideoTxBuffers;
 extern ProcessorTxVideo* g_pProcessorTxVideo;
 extern ProcessorTxAudio* g_pProcessorTxAudio;

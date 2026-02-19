@@ -544,13 +544,7 @@ void log_init(const char* component_name)
 {
    s_logServiceMessageQueue = -1;
    s_logServiceAccessErrorCount = 0;
-   char szFile[MAX_FILE_PATH_SIZE];
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-   if( access(szFile, R_OK) != -1 )
-      s_logUseService = 1;
-   else
-      s_logUseService = 0;
+   s_logUseService = 1;
 
    strcpy(sszComponentName, component_name);
    s_szAdditionalLogFile[0] = 0;

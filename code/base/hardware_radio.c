@@ -59,6 +59,7 @@ static int s_iEnumeratedUSBRadioInterfaces = 0;
 
 static usb_radio_interface_info_t s_USB_RadioInterfacesInfo[MAX_USB_DEVICES_INFO];
 static int s_iFoundUSBRadioInterfaces = 0;
+static int s_iFoundUSBKnownRadioInterfaces = 0;
 
 static radio_hw_info_t sRadioInfo[MAX_RADIO_INTERFACES];
 static int s_iHwRadiosCount = 0;
@@ -680,11 +681,11 @@ int hardware_radio_get_driver_id_card_model(int iCardModel)
    return 0;
 }
 
-int _hardware_find_usb_radio_interfaces_info()
+int hardware_find_usb_radio_interfaces_info()
 {
    s_iEnumeratedUSBRadioInterfaces = 1;
    s_iFoundUSBRadioInterfaces = 0;
-   int iCountKnownRadioCards = 0;
+   s_iFoundUSBKnownRadioInterfaces = 0;
    #ifdef HW_PLATFORM_OPENIPC_CAMERA
    log_line("[HW-R] Finding USB radio interfaces and devices for OpenIPC platform...");
    #else
@@ -724,7 +725,7 @@ int _hardware_find_usb_radio_interfaces_info()
       }
 
       // Parse the line
-      log_line("[HW-R] Parsing USB line: [%s]", &szBuff[iStLinePos]);
+      //log_line("[HW-R] Parsing USB line: [%s]", &szBuff[iStLinePos]);
       
       char* pBus = strstr(&szBuff[iStLinePos], "Bus");
       char* pDevice = strstr(&szBuff[iStLinePos], "Device");
@@ -761,8 +762,8 @@ int _hardware_find_usb_radio_interfaces_info()
       int iCardModel = _hardware_detect_card_model(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId);
       if ( iCardModel <= 0 )
       {
-         log_line("[HW-R] Could not find a known USB product id in the product id string (%s)", s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId);
-         log_line("[HW-R] Search it on entire line");
+         //log_line("[HW-R] Could not find a known USB product id in the product id string (%s)", s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId);
+         //log_line("[HW-R] Search it on entire line");
          iCardModel = _hardware_detect_card_model(&szBuff[iStLinePos]);
       }
       int iCardDriver = hardware_radio_get_driver_id_card_model(iCardModel);
@@ -772,14 +773,24 @@ int _hardware_find_usb_radio_interfaces_info()
       strncpy(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName, str_get_radio_card_model_string(iCardModel), sizeof(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName)/sizeof(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName[0]) );
       s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName[sizeof(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName)/sizeof(s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName[0]) - 1] = 0;
 
-      log_line("[HW-R] Parsing USB device: bus %d, device %d: prod id: %s, name: %s",
-          s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].iBusNb,
-          s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].iDeviceNb,
-          s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId,
-          s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName);
-
       if ( s_iFoundUSBRadioInterfaces < MAX_USB_DEVICES_INFO-1 )
+      {
+         if ( iCardModel > 0 )
+         {
+            s_iFoundUSBKnownRadioInterfaces++;
+            log_line("[HW-R] USB device %s is a known radio interface, type: %s",
+               s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId, str_get_radio_card_model_string(iCardModel));
+         }
+         else
+         {
+            log_line("[HW-R] Ignored USB device: bus %d, device %d: prod id: %s, name: %s",
+                s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].iBusNb,
+                s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].iDeviceNb,
+                s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId,
+                s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szName);
+         }
          s_iFoundUSBRadioInterfaces++;
+      }
       else
       {
          log_softerror_and_alarm("[HW-R] Not enough space in USB devices interfaces info to store one more entry. It has %d entries already.", s_iFoundUSBRadioInterfaces);
@@ -787,20 +798,13 @@ int _hardware_find_usb_radio_interfaces_info()
          break;
       }
 
-      if ( iCardModel > 0 )
-      {
-         iCountKnownRadioCards++;
-         log_line("[HW-R] USB device %s is a known radio interface, type: %s",
-            s_USB_RadioInterfacesInfo[s_iFoundUSBRadioInterfaces].szProductId, str_get_radio_card_model_string(iCardModel));
-      }
-
       // Go to next line
       iEndLinePos++;
       iStLinePos = iEndLinePos;
    }
 
-   log_line("[HW-R] Done finding USB devices. Found %d USB devices of which %d are known radio cards.", s_iFoundUSBRadioInterfaces, iCountKnownRadioCards);
-   return iCountKnownRadioCards;
+   log_line("[HW-R] Done finding USB devices. Found %d USB devices of which %d are known radio cards.", s_iFoundUSBRadioInterfaces, s_iFoundUSBKnownRadioInterfaces);
+   return s_iFoundUSBKnownRadioInterfaces;
 }
 
 int _hardware_enumerate_wifi_radios()
@@ -819,7 +823,7 @@ int _hardware_enumerate_wifi_radios()
    char szComm[256];
    char szBuff[1024];
 
-   _hardware_find_usb_radio_interfaces_info();
+   hardware_find_usb_radio_interfaces_info();
 
    log_line("[HW-R] Finding wireless radio cards...");
    FILE* fp = popen("ls /sys/class/net/ | nice grep -v eth0 | nice grep -v lo | nice grep -v usb | nice grep -v intwifi | nice grep -v relay | nice grep -v wifihotspot", "r" );
@@ -1156,6 +1160,8 @@ int _hardware_enumerate_wifi_radios()
 
 void hardware_reset_radio_enumerated_flag()
 {
+   s_iHwRadiosCount = 0;
+   s_iHwRadiosSupportedCount = 0;
    s_HardwareRadiosEnumeratedOnce = 0;
 }
 
@@ -1172,7 +1178,7 @@ int hardware_enumerate_radio_interfaces_step(int iStep)
    log_line("=================================================================");
    log_line("[HW-R] Enumerating radios (step %d)...", iStep);
 
-   if( (iStep == -1) || (iStep == 0) )
+   if ( (iStep == -1) || (iStep == 0) )
    {
       char szFile[MAX_FILE_PATH_SIZE];
       strcpy(szFile, FOLDER_CONFIG);
@@ -1330,7 +1336,8 @@ int hardware_load_driver_rtl8733bu()
 // Called only once, from ruby_start process
 int hardware_radio_load_radio_modules(int iEchoToConsole)
 {
-   int iCountKnownRadios = _hardware_find_usb_radio_interfaces_info();
+   if ( ! s_iEnumeratedUSBRadioInterfaces )
+      hardware_find_usb_radio_interfaces_info();
 
    if ( 0 == s_iFoundUSBRadioInterfaces )
    {
@@ -1343,7 +1350,7 @@ int hardware_radio_load_radio_modules(int iEchoToConsole)
       return 0;
    }
 
-   if ( 0 == iCountKnownRadios )
+   if ( 0 == s_iFoundUSBKnownRadioInterfaces )
    {
       log_softerror_and_alarm("[HW-R] No known USB radio devices found!");
       if ( iEchoToConsole )
@@ -1355,18 +1362,18 @@ int hardware_radio_load_radio_modules(int iEchoToConsole)
    }
 
    #if defined(HW_PLATFORM_RASPBERRY)
-   log_line("[HW-R] Adding radio modules on Raspberry for detected radio cards...");
+   log_line("[HW-R] Adding radio modules on Raspberry for %d detected supported radio cards...", s_iFoundUSBKnownRadioInterfaces);
    #endif
    #if defined(HW_PLATFORM_OPENIPC_CAMERA)
-   log_line("[HW-R] Adding radio modules on OpenIPC for detected radio cards...");
+   log_line("[HW-R] Adding radio modules on OpenIPC for %d detected supported radio cards...", s_iFoundUSBKnownRadioInterfaces);
    #endif
    #if defined(HW_PLATFORM_RADXA)
-   log_line("[HW-R] Adding radio modules on Radxa for detected radio cards...");
+   log_line("[HW-R] Adding radio modules on Radxa for %d detected supported radio cards...", s_iFoundUSBKnownRadioInterfaces);
    #endif
 
    if ( iEchoToConsole )
    {
-      printf("Ruby: Adding radio modules for detected radio cards...\n");
+      printf("Ruby: Adding radio modules for %d detected radio cards...\n", s_iFoundUSBKnownRadioInterfaces);
       fflush(stdout);
    }
 
@@ -2092,12 +2099,24 @@ int hardware_radio_has_low_capacity_links()
    return 0;
 }
 
+int hardware_radio_has_wifi_cards()
+{
+   if ( ! s_HardwareRadiosEnumeratedOnce )
+      hardware_enumerate_radio_interfaces();
+   for( int i=0; i<s_iHwRadiosCount; i++ )
+   {
+      if ( hardware_radio_type_is_wifi(sRadioInfo[i].iRadioType) )
+         return 1;
+   }
+   return 0;
+}
+
 int hardware_radio_has_rtl8812au_cards()
 {
    if ( ! s_HardwareRadiosEnumeratedOnce )
    if ( 0 == s_iHwRadiosCount )
    if ( ! s_iEnumeratedUSBRadioInterfaces )
-      _hardware_find_usb_radio_interfaces_info();
+      hardware_find_usb_radio_interfaces_info();
 
    int iCount = 0;
 
@@ -2126,7 +2145,7 @@ int hardware_radio_has_rtl8812eu_cards()
    if ( ! s_HardwareRadiosEnumeratedOnce )
    if ( 0 == s_iHwRadiosCount )
    if ( ! s_iEnumeratedUSBRadioInterfaces )
-      _hardware_find_usb_radio_interfaces_info();
+      hardware_find_usb_radio_interfaces_info();
 
    int iCount = 0;
 
@@ -2155,7 +2174,7 @@ int hardware_radio_has_rtl8733bu_cards()
    if ( ! s_HardwareRadiosEnumeratedOnce )
    if ( 0 == s_iHwRadiosCount )
    if ( ! s_iEnumeratedUSBRadioInterfaces )
-      _hardware_find_usb_radio_interfaces_info();
+      hardware_find_usb_radio_interfaces_info();
 
    int iCount = 0;
 
@@ -2183,7 +2202,7 @@ int hardware_radio_has_atheros_cards()
    if ( ! s_HardwareRadiosEnumeratedOnce )
    if ( 0 == s_iHwRadiosCount )
    if ( ! s_iEnumeratedUSBRadioInterfaces )
-      _hardware_find_usb_radio_interfaces_info();
+      hardware_find_usb_radio_interfaces_info();
 
    int iCount = 0;
 
@@ -2237,8 +2256,9 @@ int hardware_radio_driver_is_atheros_card(int iDriver)
    return 0;
 }
 
-int hardware_radio_type_is_ieee(int iRadioType)
+int hardware_radio_type_is_wifi(int iRadioType)
 {
+   iRadioType = ((u32)iRadioType) & 0xFF;
    if ( iRadioType == RADIO_TYPE_RALINK ||
         iRadioType == RADIO_TYPE_ATHEROS ||
         iRadioType == RADIO_TYPE_REALTEK ||
@@ -2250,6 +2270,7 @@ int hardware_radio_type_is_ieee(int iRadioType)
 
 int hardware_radio_type_is_sikradio(int iRadioType)
 {
+   iRadioType = ((u32)iRadioType) & 0xFF;
    if ( iRadioType == RADIO_TYPE_SIK )
       return 1;
    return 0;
@@ -2260,7 +2281,7 @@ int hardware_radio_is_wifi_radio(radio_hw_info_t* pRadioInfo)
    if ( NULL == pRadioInfo )
       return 0;
 
-   return hardware_radio_type_is_ieee(pRadioInfo->iRadioType);
+   return hardware_radio_type_is_wifi(pRadioInfo->iRadioType);
 }
 
 int hardware_radio_is_serial_radio(radio_hw_info_t* pRadioInfo)

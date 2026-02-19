@@ -51,7 +51,7 @@ PopupRadioInterface::PopupRadioInterface(int iVehicleLinkIndex)
    m_iVehicleRadioLinkIndex = iVehicleLinkIndex;
    m_bCalibrated = false;
 
-   if ( g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
+   if ( g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
    if ( g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS )
       m_bCalibrated = true;
 
@@ -102,21 +102,21 @@ PopupRadioInterface::PopupRadioInterface(int iVehicleLinkIndex)
       m_iMaxMeasuredTxPowerMw = -1;
       int iMaxUsableMCSRate = 0;
       int iMaxUsableLegacyRate = 0;
-      for( int i=0; i<MODEL_MAX_STORED_QUALITIES_VALUES; i++ )
+      for( int i=0; i<MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES; i++ )
       {
-         if ( g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwLegacy[m_iVehicleRadioLinkIndex][i] > 0 )
+         if ( g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwLegacy[m_iVehicleRadioInterfaceIndex][i] > 0 )
          {
             if ( i < getTestDataRatesCountLegacy() )
                iMaxUsableLegacyRate = getTestDataRatesLegacy()[i];
-            if ( g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwLegacy[m_iVehicleRadioLinkIndex][i] > m_iMaxMeasuredTxPowerMw )
-               m_iMaxMeasuredTxPowerMw = g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwLegacy[m_iVehicleRadioLinkIndex][i];
+            if ( g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwLegacy[m_iVehicleRadioInterfaceIndex][i] > m_iMaxMeasuredTxPowerMw )
+               m_iMaxMeasuredTxPowerMw = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwLegacy[m_iVehicleRadioInterfaceIndex][i];
          }
-         if ( g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwMCS[m_iVehicleRadioLinkIndex][i] > 0 )
+         if ( g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwMCS[m_iVehicleRadioInterfaceIndex][i] > 0 )
          {
             if ( i < getTestDataRatesCountMCS() )
                iMaxUsableMCSRate = getTestDataRatesMCS()[i];
-            if ( g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwMCS[m_iVehicleRadioLinkIndex][i] > m_iMaxMeasuredTxPowerMw )
-               m_iMaxMeasuredTxPowerMw = g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwMCS[m_iVehicleRadioLinkIndex][i];
+            if ( g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwMCS[m_iVehicleRadioInterfaceIndex][i] > m_iMaxMeasuredTxPowerMw )
+               m_iMaxMeasuredTxPowerMw = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwMCS[m_iVehicleRadioInterfaceIndex][i];
           }
       }
       strcpy(szBuff, L("Max measured usable powers for this radio:"));
@@ -239,8 +239,8 @@ void PopupRadioInterface::Render()
    char szBuff[128];
    int iCountTestsLegacy = 5;
    int iCountTestsMCS = getTestDataRatesCountMCS();
-   if ( iCountTestsMCS > MODEL_MAX_STORED_QUALITIES_VALUES )
-      iCountTestsMCS = MODEL_MAX_STORED_QUALITIES_VALUES;
+   if ( iCountTestsMCS > MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES )
+      iCountTestsMCS = MODEL_MAX_STORED_RADIO_INTERFACE_QUALITIES_VALUES;
    int iMaxCountTests = iCountTestsLegacy;
    if ( iCountTestsMCS > iMaxCountTests )
       iMaxCountTests = iCountTestsMCS;
@@ -300,9 +300,9 @@ void PopupRadioInterface::Render()
    {
       int iTxPower = 0;
       if ( i < iCountTestsMCS )
-         iTxPower = g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwMCS[m_iVehicleRadioLinkIndex][i];
+         iTxPower = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwMCS[m_iVehicleRadioInterfaceIndex][i];
       else if ( i < getTestDataRatesCountLegacy() )
-         iTxPower = g_pCurrentModel->radioRuntimeCapabilities.iMaxTxPowerMwLegacy[m_iVehicleRadioLinkIndex][i];
+         iTxPower = g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxTxPowerMwLegacy[m_iVehicleRadioInterfaceIndex][i];
       float fHeight = 0.0;
       if ( (iTxPower > 0) && (iMaxPowerMw > 0) )
          fHeight = m_fHeightGraph * (float)iTxPower/(float)iMaxPowerMw;

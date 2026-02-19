@@ -678,7 +678,7 @@ float osd_show_txpowers(float xPos)
          bPITMode = true;
 
       strcpy(szTxPower, "0 mW");
-      if ( g_pCurrentModel->radioLinksParams.link_capabilities_flags[iVehicleRadioLink] & RADIO_HW_CAPABILITY_FLAG_DISABLED )
+      if ( pActiveModel->radioLinksParams.link_capabilities_flags[iVehicleRadioLink] & RADIO_HW_CAPABILITY_FLAG_DISABLED )
          strcpy(szTxPower, "- mW");
       else if ( pVRTInfo->headerRubyTelemetryExtended.iTxPowers[iVehicleRadioLink] == 0 )
       {
@@ -693,7 +693,7 @@ float osd_show_txpowers(float xPos)
          {
             if ( g_pCurrentModel->radioInterfacesParams.interface_link_id[i] != iVehicleRadioLink )
                continue;
-            if ( ! hardware_radio_type_is_ieee(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
+            if ( ! hardware_radio_type_is_wifi(g_pCurrentModel->radioInterfacesParams.interface_radiotype_and_driver[i] & 0xFF) )
                continue;
 
             int iCardModel = g_pCurrentModel->radioInterfacesParams.interface_card_model[i];
@@ -719,12 +719,19 @@ float osd_show_txpowers(float xPos)
          if ( iPowerMw < 10 )
             bYellow = true;
 
-         if ( !(g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
+         if ( !(pActiveModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
             bRed = true;
 
-         if ( !(g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
+         if ( !(pActiveModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
             bRed = true;
       }
+      if ( pActiveModel->radioLinksParams.links_count > 1 )
+      {
+         char szTmp[64];
+         snprintf(szTmp, sizeof(szTmp)/sizeof(szTmp[0]), "%d: %s", iVehicleRadioLink+1, szTxPower);
+         strncpy(szTxPower, szTmp, sizeof(szTxPower)/sizeof(szTxPower[0]));
+      }
+
       if ( bRed || bPITMode )
          g_pRenderEngine->setColors(get_Color_IconError());
       else if ( bYellow )
@@ -736,7 +743,9 @@ float osd_show_txpowers(float xPos)
       float fPowerWidth = g_pRenderEngine->textWidth(g_idFontOSD, szTxPower);
       float fwPowerIcon = osd_getFontHeight()*0.6;
       osd_show_value_left(xPos, fyPower, szTxPower, g_idFontOSD);
-      if ( bPITMode )
+      if ( pActiveModel->radioLinksParams.link_capabilities_flags[iVehicleRadioLink] & RADIO_HW_CAPABILITY_FLAG_DISABLED )
+         osd_show_value(xPos-fPowerWidth*0.7, fyPower + height_text, "DIS", g_idFontOSD);
+      else if ( bPITMode )
          osd_show_value(xPos-fPowerWidth*0.7, fyPower + height_text, "PIT", g_idFontOSD);
       else
          g_pRenderEngine->drawIcon(xPos - 0.5*fPowerWidth - 0.5 * fwPowerIcon, fyPower + height_text, fwPowerIcon, fwPowerIcon * g_pRenderEngine->getAspectRatio(), g_idIconRadio);
@@ -795,7 +804,7 @@ float _osd_show_rc_rssi(float xPos, float yPos, float fScale)
    if ( (NULL == pActiveModel) || (iRuntimeIndex < 0) )
       return 0.0;
 
-   if ( pActiveModel->rc_params.rc_enabled && (!pActiveModel->is_spectator) )
+   if ( (pActiveModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (!pActiveModel->is_spectator) )
       bHasRubyRC = true;
  
    osd_set_colors();

@@ -435,7 +435,7 @@ void MenuVehicleManagement::onSelectItem()
          char szTextW[256];
          sprintf(szTextW, "Your %s is armed. Are you sure you want to reboot it?", g_pCurrentModel->getVehicleTypeString());
          MenuConfirmation* pMC = new MenuConfirmation(L("Warning! Reboot Confirmation"), szTextW, 10);
-         if ( g_pCurrentModel->rc_params.rc_enabled )
+         if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
          {
             pMC->addTopLine(" ");
             pMC->addTopLine(L("Warning: You have the RC link enabled, the vehicle flight controller will go into RC failsafe mode during reboot."));

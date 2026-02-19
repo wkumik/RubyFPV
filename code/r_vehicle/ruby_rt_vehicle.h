@@ -5,7 +5,7 @@ void reopen_marked_sik_interfaces();
 void flag_update_sik_interface(int iInterfaceIndex);
 void flag_reinit_sik_interface(int iInterfaceIndex);
 void reinit_radio_interfaces();
-void send_radio_config_to_controller();
+void flag_send_radio_config_to_controller();
 void send_radio_reinitialized_message();
 void checkDeveloperFlagsChanges(u32 uOldDeveloperFlags, u32 uNewDeveloperFlags);
 int process_and_send_packets(bool bIsEndOfTransmissionFrame);

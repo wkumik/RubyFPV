@@ -29,7 +29,7 @@ class MenuVehicleRC: public Menu
       MenuItemSelect* m_pItemsSelect[20];
       MenuItemSlider* m_pItemsSlider[10];      
 
-      float m_CurrentRCValues[MAX_RC_CHANNELS];
+      int m_CurrentRCValues[MAX_RC_CHANNELS];
       u32 m_TimeLastRCCompute;
       u32 m_TimeLastJoystickCheck;
       int m_nIndexPrimaryHID;

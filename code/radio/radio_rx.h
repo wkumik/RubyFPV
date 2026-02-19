@@ -107,6 +107,9 @@ u32 radio_rx_get_and_reset_max_loop_time_queue();
 u32 radio_rx_get_current_frame_start_time();
 u32 radio_rx_get_current_frame_end_time();
 u16 radio_rx_get_current_frame_number();
+int radio_rx_is_eof_detected();
+void radio_rx_check_update_eof(u32 uTimeNow, u32 uTimeGuard, u32 uVideoFPS, u32 uMaxRetrWindow);
+
 u8* radio_rx_wait_get_next_received_high_prio_packet(u32 uTimeoutMicroSec, int* pLength, int* pIsShortPacket, int* pRadioInterfaceIndex);
 u8* radio_rx_wait_get_next_received_reg_prio_packet(u32 uTimeoutMicroSec, int* pLength, int* pIsShortPacket, int* pRadioInterfaceIndex);
 

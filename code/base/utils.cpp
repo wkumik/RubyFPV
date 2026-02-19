@@ -224,9 +224,9 @@ int _compute_controller_rc_value_button(Model* pModel, int nChannel, int prevRCV
    return result;
 }
 
-float _compute_controller_rc_ranged_value(Model* pModel, int nChannel, float prevRCValue, float fNormalizedValue, u32 miliSec)
+int _compute_controller_rc_ranged_value(Model* pModel, int nChannel, int prevRCValue, float fNormalizedValue, u32 miliSec)
 {
-   float rcValue = pModel->rc_params.rcChMid[nChannel];
+   int rcValue = pModel->rc_params.rcChMid[nChannel];
 
    if ( fNormalizedValue < 0.0 ) fNormalizedValue = 0.0;
    if ( fNormalizedValue > 1.0 ) fNormalizedValue = 1.0;
@@ -244,11 +244,11 @@ float _compute_controller_rc_ranged_value(Model* pModel, int nChannel, float pre
    
    bool isRelativeMove = false;
 
-   if ( nCamPitch > 0 && (nChannel == nCamPitch-1) )
+   if ( (nCamPitch > 0) && (nChannel == nCamPitch-1) )
       isRelativeMove = true;
-   if ( nCamRoll > 0 && (nChannel == nCamRoll-1) )
+   if ( (nCamRoll > 0) && (nChannel == nCamRoll-1) )
       isRelativeMove = true;
-   if ( nCamYaw > 0 && (nChannel == nCamYaw-1) )
+   if ( (nCamYaw > 0) && (nChannel == nCamYaw-1) )
       isRelativeMove = true;
 
    if ( (((pModel->camera_rc_channels >> 24) & 0xFF) >> 5) & 0x01 )
@@ -301,12 +301,12 @@ float _compute_controller_rc_ranged_value(Model* pModel, int nChannel, float pre
    return rcValue;
 }
 
-float compute_output_rc_value(Model* pModel, int nChannel, float prevRCValue, float fNormalizedValue, u32 miliSec)
+int compute_output_rc_value(Model* pModel, int nChannel, int prevRCValue, float fNormalizedValue, u32 miliSec)
 {
    return _compute_controller_rc_ranged_value(pModel, nChannel, prevRCValue, fNormalizedValue, miliSec);
 }
 
-float _compute_controller_rc_value_axe(Model* pModel, int nChannel, float prevRCValue, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec)
+int _compute_controller_rc_value_axe(Model* pModel, int nChannel, int prevRCValue, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec)
 {
    // Check to match description from models.h and config_rc.h bit flags
    // first byte:
@@ -339,7 +339,7 @@ float _compute_controller_rc_value_axe(Model* pModel, int nChannel, float prevRC
    // Throttle with reverse/fwd?
 
    if ( (pModel->vehicle_type & MODEL_TYPE_MASK) == MODEL_TYPE_CAR || (pModel->vehicle_type & MODEL_TYPE_MASK) == MODEL_TYPE_BOAT || (pModel->vehicle_type & MODEL_TYPE_MASK) == MODEL_TYPE_ROBOT )
-   if ( nChannel == 2 && NULL != pModel && (pModel->rc_params.rcChAssignmentThrotleReverse & RC_CH_ASSIGNMENT_FLAG_ASSIGNED) )
+   if ( (nChannel == 2) && (NULL != pModel) && (pModel->rc_params.rcChAssignmentThrotleReverse & RC_CH_ASSIGNMENT_FLAG_ASSIGNED) )
    {
       fNormalizedValue = (float)(rawValue - pCtrlInterface->axesMinValue[nAxe])/(float)(pCtrlInterface->axesMaxValue[nAxe] - pCtrlInterface->axesMinValue[nAxe]);
       if ( fNormalizedValue < 0.0 ) fNormalizedValue = 0.0;
@@ -389,7 +389,7 @@ float _compute_controller_rc_value_axe(Model* pModel, int nChannel, float prevRC
                bIsInReverse = true;
          }
       }
-      float rcValue = pModel->rc_params.rcChMid[nChannel];
+      int rcValue = pModel->rc_params.rcChMid[nChannel];
       if ( bIsInReverse )
          rcValue = pModel->rc_params.rcChMid[nChannel] - fNormalizedValue*(float)(pModel->rc_params.rcChMid[nChannel] - pModel->rc_params.rcChMin[nChannel]);
       else
@@ -404,7 +404,6 @@ float _compute_controller_rc_value_axe(Model* pModel, int nChannel, float prevRC
       fNormalizedValue = (float)(rawValue - pCtrlInterface->axesMinValue[nAxe])/(float)(pCtrlInterface->axesMaxValue[nAxe] - pCtrlInterface->axesMinValue[nAxe]);
       return _compute_controller_rc_ranged_value(pModel, nChannel, prevRCValue, fNormalizedValue, miliSec);
    }
-
 
    // Upper half
 
@@ -431,11 +430,11 @@ float _compute_controller_rc_value_axe(Model* pModel, int nChannel, float prevRC
    return _compute_controller_rc_ranged_value(pModel, nChannel, prevRCValue, fNormalizedValue, miliSec);
 }
 
-float compute_controller_rc_value(Model* pModel, int nChannel, float prevRCValue, t_shared_mem_i2c_controller_rc_in* pRCIn, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec)
+int compute_controller_rc_value(Model* pModel, int nChannel, int prevRCValue, t_shared_mem_i2c_controller_rc_in* pRCIn, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec)
 {
    if ( NULL == pModel )
       return 0;
-   if ( nChannel < 0 || nChannel >= (int) pModel->rc_params.channelsCount )
+   if ( (nChannel < 0) || (nChannel >= (int) pModel->rc_params.channelsCount) )
       return 0;
 
    if ( pModel->rc_params.inputType == RC_INPUT_TYPE_RC_IN_SBUS_IBUS )
@@ -448,16 +447,16 @@ float compute_controller_rc_value(Model* pModel, int nChannel, float prevRCValue
       if ( nChannel >= (int) pRCIn->uChannelsCount )
          return 0;
       if ( pModel->rc_params.iRCTranslationType == RC_TRANSLATION_TYPE_2000 )
-         return 1000 + (float)(pRCIn->uChannels[nChannel])/2.0;
+         return 1000 + (int)(pRCIn->uChannels[nChannel])/2.0;
       if ( pModel->rc_params.iRCTranslationType == RC_TRANSLATION_TYPE_4000 )
-         return 1000 + (float)(pRCIn->uChannels[nChannel])/4.0;
+         return 1000 + (int)(pRCIn->uChannels[nChannel])/4.0;
       else
-         return (float)(pRCIn->uChannels[nChannel]);
+         return (int)(pRCIn->uChannels[nChannel]);
    }
 
    if ( pModel->rc_params.inputType == RC_INPUT_TYPE_USB )
    {
-      if ( NULL == pJoystick || NULL == pCtrlInterface )
+      if ( (NULL == pJoystick) || (NULL == pCtrlInterface) )
          return get_rc_channel_failsafe_value(pModel, nChannel, prevRCValue);
 
       if ( (pModel->rc_params.rcChAssignment[nChannel] & RC_CH_ASSIGNMENT_FLAG_ASSIGNED) == 0 )
@@ -499,7 +498,7 @@ int get_rc_channel_failsafe_value(Model* pModel, int nChannel, int prevRCValue)
 {
    if ( NULL == pModel )
       return 0;
-   if ( nChannel < 0 || nChannel >= MAX_RC_CHANNELS )
+   if ( (nChannel < 0) || (nChannel >= MAX_RC_CHANNELS) )
       return 0;
 
    if ( pModel->rc_params.failsafeFlags == RC_FAILSAFE_NOOUTPUT )
@@ -575,8 +574,9 @@ void log_current_full_radio_configuration(Model* pModel)
       szBuff[0] = 0;
 
       str_get_radio_capabilities_description(pModel->radioLinksParams.link_capabilities_flags[i], szBuff);
-      str_get_radio_frame_flags_description(pModel->radioLinksParams.link_radio_flags[i], szBuff2); 
-      log_line("* %sRadio Link %d Capab: %s, Radio flags: %s", szPrefix, i+1, szBuff, szBuff2);
+      str_get_radio_frame_flags_description(pModel->radioLinksParams.link_radio_flags_tx[i], szBuff2); 
+      str_get_radio_frame_flags_description(pModel->radioLinksParams.link_radio_flags_rx[i], szBuff3); 
+      log_line("* %sRadio Link %d Capab: %s, Radio tx flags: %s, Radio rx flags: %s", szPrefix, i+1, szBuff, szBuff2, szBuff3);
       str_getDataRateDescription(pModel->radioLinksParams.downlink_datarate_video_bps[i], 0, szBuff);
       str_getDataRateDescription(pModel->radioLinksParams.downlink_datarate_data_bps[i], 0, szBuff2);
       str_getDataRateDescription(pModel->radioLinksParams.uplink_datarate_video_bps[i], 0, szBuff3);
@@ -604,11 +604,11 @@ void log_current_full_radio_configuration(Model* pModel)
       szPrefix[0] = 0;
       radio_hw_info_t* pRadioInfo = hardware_get_radio_info(i);
       str_get_radio_capabilities_description(pModel->radioInterfacesParams.interface_capabilities_flags[i], szBuff);
-      str_get_radio_frame_flags_description(pModel->radioInterfacesParams.interface_current_radio_flags[i], szBuff2); 
+      str_get_radio_frame_flags_description(pModel->radioInterfacesParams.interface_supported_radio_flags[i], szBuff2); 
       if ( pModel->radioInterfacesParams.interface_capabilities_flags[i] & RADIO_HW_CAPABILITY_FLAG_USED_FOR_RELAY )
          strcpy(szPrefix, "Relay ");
       log_line("* %sRadio int %d: %s [%s] %s, current frequency: %s, assigned to radio link %d", szPrefix, i+1, pRadioInfo->szUSBPort, str_get_radio_card_model_string(pModel->radioInterfacesParams.interface_card_model[i]), pRadioInfo->szDriver, str_format_frequency(pRadioInfo->uCurrentFrequencyKhz), pModel->radioInterfacesParams.interface_link_id[i]+1);
-      log_line("* %sRadio int %d Capab: %s, Radio flags: %s", szPrefix, i+1, szBuff, szBuff2);
+      log_line("* %sRadio int %d Capab: %s, Supported radio flags: %s", szPrefix, i+1, szBuff, szBuff2);
       log_line("");
    }
    log_line("=====================================================================================");
@@ -703,11 +703,11 @@ bool radio_utils_set_interface_frequency(Model* pModel, int iRadioIndex, int iAs
          if ( (NULL != pModel) && (iAssignedModelRadioLink >= 0) && (iAssignedModelRadioLink < MAX_RADIO_INTERFACES) )
          {
             if ( hardware_is_station() )
-            if ( pModel->radioLinksParams.link_radio_flags[iAssignedModelRadioLink] & RADIO_FLAG_HT40_CONTROLLER )
-                  bTryHT40 = true;
+            if ( pModel->radioLinksParams.link_radio_flags_rx[iAssignedModelRadioLink] & RADIO_FLAG_HT40 )
+               bTryHT40 = true;
             if ( hardware_is_vehicle() )
-            if ( pModel->radioLinksParams.link_radio_flags[iAssignedModelRadioLink] & RADIO_FLAG_HT40_VEHICLE )
-                  bTryHT40 = true;
+            if ( pModel->radioLinksParams.link_radio_flags_tx[iAssignedModelRadioLink] & RADIO_FLAG_HT40 )
+               bTryHT40 = true;
          }
 
          if ( bTryHT40 )

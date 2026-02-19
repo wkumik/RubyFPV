@@ -327,7 +327,7 @@ char* str_get_packet_type(int iPacketType)
       case PACKET_TYPE_RUBY_MODEL_SETTINGS:      strcpy(s_szPacketType, "PACKET_TYPE_RUBY_MODEL_SETTINGS"); break;
       case PACKET_TYPE_RUBY_PAIRING_REQUEST:     strcpy(s_szPacketType, "PACKET_TYPE_RUBY_PAIRING_REQUEST"); break;
       case PACKET_TYPE_RUBY_PAIRING_CONFIRMATION: strcpy(s_szPacketType, "PACKET_TYPE_RUBY_PAIRING_CONFIRMATION"); break;
-      case PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED: strcpy(s_szPacketType, "PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED"); break;
+      case PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG: strcpy(s_szPacketType, "PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG"); break;
       case PACKET_TYPE_RUBY_LOG_FILE_SEGMENT:    strcpy(s_szPacketType, "PACKET_TYPE_RUBY_LOG_FILE_SEGMENT"); break;
       case PACKET_TYPE_RUBY_MESSAGE:             strcpy(s_szPacketType, "PACKET_TYPE_RUBY_MESSAGE"); break;
       case PACKET_TYPE_RUBY_ALARM:               strcpy(s_szPacketType, "PACKET_TYPE_RUBY_ALARM"); break;
@@ -474,7 +474,7 @@ char* str_get_packet_history_symbol(int iPacketType, int iRepeatCount)
    if ( iPacketType == PACKET_TYPE_RUBY_MODEL_SETTINGS )
       s_szOSDRenderRxHistoryPacketSymbol[0] = 'M';
 
-   if ( iPacketType == PACKET_TYPE_RUBY_RADIO_CONFIG_UPDATED )
+   if ( iPacketType == PACKET_TYPE_RUBYFPV_INFO_RADIO_CONFIG )
       s_szOSDRenderRxHistoryPacketSymbol[0] = 'U';
 
    if ( iPacketType == PACKET_TYPE_RUBY_ALARM )
@@ -1202,32 +1202,40 @@ const char* str_get_radio_card_model_string_short(int cardModel)
    return s_szCardModelDescription;
 }
 
-void str_get_radio_capabilities_description(u32 flags, char* szOutput)
+char* str_get_radio_capabilities_description2(u32 uFlags)
+{
+   static char s_szRadioCapabilitiesFlags[256];
+   s_szRadioCapabilitiesFlags[0] = 0;
+   str_get_radio_capabilities_description(uFlags, s_szRadioCapabilitiesFlags);   
+   return s_szRadioCapabilitiesFlags;
+}
+
+void str_get_radio_capabilities_description(u32 uFlags, char* szOutput)
 {
    if ( NULL == szOutput )
       return;
    szOutput[0] = 0;
    
-   if ( flags & RADIO_HW_CAPABILITY_FLAG_DISABLED )
+   if ( uFlags & RADIO_HW_CAPABILITY_FLAG_DISABLED )
       strcat(szOutput, "[DISABLED] ");
-   if ( (flags & RADIO_HW_CAPABILITY_FLAG_CAN_TX) && (flags & RADIO_HW_CAPABILITY_FLAG_CAN_RX) )
+   if ( (uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_TX) && (uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_RX) )
       strcat(szOutput, "[CAN TX/RX] ");
-   else if ( flags & RADIO_HW_CAPABILITY_FLAG_CAN_RX )
+   else if ( uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_RX )
       strcat(szOutput, "[CAN RX] ");
-   else if ( flags & RADIO_HW_CAPABILITY_FLAG_CAN_TX )
+   else if ( uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_TX )
       strcat(szOutput, "[CAN TX] ");
    else
       strcat(szOutput, "![CAN'T RX OR TX]! ");
 
-   if ( flags & RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_DATA )
+   if ( uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_DATA )
       strcat(szOutput, "[DATA]");
 
-   if ( flags & RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_VIDEO )
+   if ( uFlags & RADIO_HW_CAPABILITY_FLAG_CAN_USE_FOR_VIDEO )
       strcat(szOutput, "[VIDEO]");
 
-   if ( flags & RADIO_HW_CAPABILITY_FLAG_HIGH_CAPACITY )
+   if ( uFlags & RADIO_HW_CAPABILITY_FLAG_HIGH_CAPACITY )
       strcat(szOutput, "[HIGH CAPACITY]");
-   if ( flags & RADIO_HW_CAPABILITY_FLAG_USED_FOR_RELAY )
+   if ( uFlags & RADIO_HW_CAPABILITY_FLAG_USED_FOR_RELAY )
       strcat(szOutput, "[RELAY]");
 }
 
@@ -1244,7 +1252,7 @@ void str_get_radio_frame_flags_description(u32 frameFlags, char* szOutput)
    if ( NULL == szOutput )
       return;
    if ( (frameFlags & RADIO_FLAGS_USE_LEGACY_DATARATES) && (frameFlags & RADIO_FLAGS_USE_MCS_DATARATES) )
-      strcpy(szOutput, "[MIXED rates]");
+      strcpy(szOutput, "[LEG&MCS rates]");
    else if ( frameFlags & RADIO_FLAGS_USE_LEGACY_DATARATES )
       strcpy(szOutput, "[LEGACY rates]");
    else if ( frameFlags & RADIO_FLAGS_USE_MCS_DATARATES )
@@ -1253,9 +1261,9 @@ void str_get_radio_frame_flags_description(u32 frameFlags, char* szOutput)
       strcpy(szOutput, "[Unknown rates]");
 
    if ( frameFlags & RADIO_FLAGS_FRAME_TYPE_DATA )
-      strcat(szOutput, " [Fr Type: DATA]");
+      strcat(szOutput, " [Fr: DATA]");
    else
-      strcat(szOutput, " [Frames Type: UNKNOWN]");
+      strcat(szOutput, " [Fr: UNKNOWN]");
 
    if ( frameFlags & RADIO_FLAGS_SIK_ECC )
       strcat(szOutput, " [SIK_ECC]");
@@ -1264,35 +1272,14 @@ void str_get_radio_frame_flags_description(u32 frameFlags, char* szOutput)
    if ( frameFlags & RADIO_FLAGS_SIK_MCSTR )
       strcat(szOutput, " [SIK_MCSTR]");
 
-   if ( (frameFlags & RADIO_FLAG_HT40_VEHICLE) && (frameFlags & RADIO_FLAG_HT40_CONTROLLER) )
-      strcat(szOutput, " [HT40 V/C]");
-   else if ( frameFlags & RADIO_FLAG_HT40_VEHICLE )
-      strcat(szOutput, " [HT40 V]");
-   else if ( frameFlags & RADIO_FLAG_HT40_CONTROLLER )
-      strcat(szOutput, " [HT40 C]");
-   else
-      strcat(szOutput, " [HT20 V/C]");
-
-   if ( (frameFlags & RADIO_FLAG_SGI_VEHICLE) && (frameFlags & RADIO_FLAG_SGI_CONTROLLER) )
-      strcat(szOutput, " [SGI V/C]");
-   else if ( frameFlags & RADIO_FLAG_SGI_VEHICLE )
-      strcat(szOutput, " [SGI V]");
-   else if ( frameFlags & RADIO_FLAG_SGI_CONTROLLER )
-      strcat(szOutput, " [SGI C]");
-
-   if ( (frameFlags & RADIO_FLAG_STBC_VEHICLE) && (frameFlags & RADIO_FLAG_STBC_CONTROLLER) )
-      strcat(szOutput, " [STBC V/C]");
-   else if ( frameFlags & RADIO_FLAG_STBC_VEHICLE )
-      strcat(szOutput, " [STBC V]");
-   else if ( frameFlags & RADIO_FLAG_STBC_CONTROLLER )
-      strcat(szOutput, " [STBC C]");
-   
-   if ( (frameFlags & RADIO_FLAG_LDPC_VEHICLE) && (frameFlags & RADIO_FLAG_LDPC_CONTROLLER) )
-      strcat(szOutput, " [LDPC V/C]");
-   else if ( frameFlags & RADIO_FLAG_LDPC_VEHICLE )
-      strcat(szOutput, " [LDPC V]");
-   else if ( frameFlags & RADIO_FLAG_LDPC_CONTROLLER )
-      strcat(szOutput, " [LDPC C]");
+   if ( frameFlags & RADIO_FLAG_HT40 )
+      strcat(szOutput, " [HT40]");
+   if ( frameFlags & RADIO_FLAG_SGI )
+      strcat(szOutput, " [SGI]");
+   if ( frameFlags & RADIO_FLAG_STBC )
+      strcat(szOutput, " [STBC]");
+   if ( frameFlags & RADIO_FLAG_LDPC )
+      strcat(szOutput, " [LDPC]");
 }
 
 char* str_format_adaptive_video_flags(u8 uFlags)

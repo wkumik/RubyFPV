@@ -208,6 +208,8 @@ void _check_send_pairing_requests()
          continue;
       if ( g_State.vehiclesRuntimeInfo[i].bIsPairingDone )
          continue;
+      if ( ! g_State.vehiclesRuntimeInfo[i].bReceivedAnyData )
+         continue;
 
       // Ignore unknown vehicles
       if ( ! controllerHasModelWithId(g_State.vehiclesRuntimeInfo[i].uVehicleId) )

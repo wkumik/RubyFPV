@@ -141,10 +141,9 @@ void _telemetry_mavlink_send_setup()
    char szParam[32];
    strcpy(szParam, "RC_OVERRIDE_TIME");
 
-   if ( g_pCurrentModel->rc_params.rc_enabled )
+   if ( g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED )
    {      
-      float fTimeout = 1.0/g_pCurrentModel->rc_params.rc_frames_per_second;
-      fTimeout *= 2.5;
+      float fTimeout = (float)g_pCurrentModel->rc_params.rc_failsafe_timeout_ms/1000.0;
       log_line("[Telem] Sending to FC an RC_OVERRIDE timeout of %.2f seconds", fTimeout);
       mavlink_message_t msgSetParam;
       mavlink_msg_param_set_pack(g_pCurrentModel->telemetry_params.controller_mavlink_id, componentId, &msgSetParam,
@@ -527,7 +526,7 @@ void telemetry_mavlink_send_to_controller()
    pFCTelem->uFCFlags = pFCTelem->uFCFlags & (~FC_TELE_FLAGS_RC_FAILSAFE);
 
    #ifdef FEATURE_ENABLE_RC
-   if ( g_pCurrentModel->rc_params.rc_enabled && NULL != s_pPHDownstreamInfoRC )
+   if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (NULL != s_pPHDownstreamInfoRC) )
    if ( s_pPHDownstreamInfoRC->is_failsafe )
       pFCTelem->uFCFlags = pFCTelem->uFCFlags | FC_TELE_FLAGS_RC_FAILSAFE;
    #endif

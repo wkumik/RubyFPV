@@ -293,11 +293,10 @@ void process_received_single_radio_packet(int iRadioInterface, u8* pData, int da
 
    // Detect if it's a relayed packet from controller to relayed vehicle
    
-   if ( (NULL != g_pCurrentModel) && (g_pCurrentModel->relay_params.isRelayEnabledOnRadioLinkId >= 0) )
+   if ( (NULL != g_pCurrentModel) && (g_pCurrentModel->relay_params.uRelayedVehicleId != 0) )
    if ( uVehicleIdDest == g_pCurrentModel->relay_params.uRelayedVehicleId )
    {
       _mark_link_from_controller_present(iRadioInterface);
-  
       relay_process_received_single_radio_packet_from_controller_to_relayed_vehicle(iRadioInterface, pData, pPH->total_length);
       return;
    }
@@ -373,7 +372,7 @@ void process_received_single_radio_packet(int iRadioInterface, u8* pData, int da
 
    if ( (uPacketFlags & PACKET_FLAGS_MASK_MODULE) == PACKET_COMPONENT_RC )
    {
-      if ( g_bReceivedPairingRequest && g_pCurrentModel->rc_params.rc_enabled )
+      if ( g_bReceivedPairingRequest && (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) )
          ruby_ipc_channel_send_message(s_fIPCRouterToRC, pData, dataLength);
       return;
    }

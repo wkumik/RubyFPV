@@ -492,35 +492,19 @@ void radio_set_frames_flags(u32 frameFlags, u32 uTimeNow)
       int mcsRate = -sRadioDataRate_bps-1;
       if ( mcsRate < 0 )
          mcsRate = 0;
-
-      if ( hardware_is_station() )
-      {
-         if ( uFrameFlagsToSet & RADIO_FLAG_HT40_CONTROLLER )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_40;
-         else
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_20;
-
-         if ( uFrameFlagsToSet & RADIO_FLAG_LDPC_CONTROLLER )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_FEC_LDPC; 
-         if ( uFrameFlagsToSet & RADIO_FLAG_SGI_CONTROLLER )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_SGI;
-         if ( uFrameFlagsToSet & RADIO_FLAG_STBC_CONTROLLER )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT;
-      }
+     
+      if ( uFrameFlagsToSet & RADIO_FLAG_HT40 )
+         mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_40;
       else
-      {
-         if ( uFrameFlagsToSet & RADIO_FLAG_HT40_VEHICLE )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_40;
-         else
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_20;
+         mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_BW_20;
 
-         if ( uFrameFlagsToSet & RADIO_FLAG_LDPC_VEHICLE )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_FEC_LDPC; 
-         if ( uFrameFlagsToSet & RADIO_FLAG_SGI_VEHICLE )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_SGI;
-         if ( uFrameFlagsToSet & RADIO_FLAG_STBC_VEHICLE )
-            mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT;       
-      }
+      if ( uFrameFlagsToSet & RADIO_FLAG_LDPC )
+         mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_FEC_LDPC; 
+      if ( uFrameFlagsToSet & RADIO_FLAG_SGI )
+         mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_SGI;
+      if ( uFrameFlagsToSet & RADIO_FLAG_STBC )
+         mcs_flags = mcs_flags | IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT;
+  
       s_uRadiotapHeaderMCS[10] = mcs_known;
       s_uRadiotapHeaderMCS[11] = mcs_flags;
       s_uRadiotapHeaderMCS[12] = (uint8_t)mcsRate;

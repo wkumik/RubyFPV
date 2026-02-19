@@ -163,9 +163,9 @@ static void * _reinit_sik_thread_func(void *ignored_argument)
                {
                   uFreqKhz = g_pCurrentModel->radioLinksParams.link_frequency_khz[iRadioLink];
                   uDataRate = g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[iRadioLink];
-                  uECC = (g_pCurrentModel->radioLinksParams.link_radio_flags[iRadioLink] & RADIO_FLAGS_SIK_ECC)? 1:0;
-                  uLBT = (g_pCurrentModel->radioLinksParams.link_radio_flags[iRadioLink] & RADIO_FLAGS_SIK_LBT)? 1:0;
-                  uMCSTR = (g_pCurrentModel->radioLinksParams.link_radio_flags[iRadioLink] & RADIO_FLAGS_SIK_MCSTR)? 1:0;
+                  uECC = (g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iRadioLink] & RADIO_FLAGS_SIK_ECC)? 1:0;
+                  uLBT = (g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iRadioLink] & RADIO_FLAGS_SIK_LBT)? 1:0;
+                  uMCSTR = (g_pCurrentModel->radioLinksParams.link_radio_flags_rx[iRadioLink] & RADIO_FLAGS_SIK_MCSTR)? 1:0;
                
                   bool bDataRateOk = false;
                   for( int i=0; i<getSiKAirDataRatesCount(); i++ )

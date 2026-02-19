@@ -99,13 +99,13 @@ void osd_show_HID()
 
    g_pRenderEngine->setColors(get_Color_OSDText(), 0.8);
 
-   if ( NULL != g_pCurrentModel && ( ! g_pCurrentModel->rc_params.rc_enabled ) )
+   if ( NULL != g_pCurrentModel && ( ! (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) ) )
    {
       osd_show_value(xPos+fAxeSizeH*0.08, yPos+fAxeSizeV-height_text*1.2, "DISABLED", g_idFontOSDSmall);
       osd_show_value(xPos+fAxeSizeH*0.08 + fAxeSizeH + fSpacingH, yPos+fAxeSizeV-height_text*1.2, "DISABLED", g_idFontOSDSmall);
       bShowMAVLink = true;
    }
-   else if ( NULL != g_pCurrentModel && ((g_pCurrentModel->rc_params.flags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
+   else if ( NULL != g_pCurrentModel && ((g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED) == 0 ) )
    {
       osd_show_value(xPos+fAxeSizeH*0.2, yPos+fAxeSizeV-height_text*1.3, "NO OUT", g_idFontOSDSmall);
       osd_show_value(xPos+fAxeSizeH*0.2 + fAxeSizeH + fSpacingH, yPos+fAxeSizeV-height_text*1.3, "NO OUT", g_idFontOSDSmall);

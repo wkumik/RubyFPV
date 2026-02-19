@@ -193,7 +193,7 @@ void MenuVehicleRadioLinkSiK::valuesToUI()
    m_pItemsSlider[0]->setCurrentValue(pCS->iSiKPacketSize);
 
    u32 uLinkCapabilities = g_pCurrentModel->radioLinksParams.link_capabilities_flags[m_iRadioLink];
-   u32 uLinkRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[m_iRadioLink];
+   u32 uLinkRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags_tx[m_iRadioLink];
 
    if ( uLinkCapabilities & RADIO_HW_CAPABILITY_FLAG_USED_FOR_RELAY )
    {
@@ -297,7 +297,7 @@ void MenuVehicleRadioLinkSiK::sendRadioLinkFlags(int linkIndex)
    if ( linkIndex < 0 || linkIndex >= g_pCurrentModel->radioLinksParams.links_count )
       return;
 
-   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex];
+   u32 uRadioFlags = g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex];
    int datarate_bps = 0;
 
    int indexRate = m_pItemsSelect[2]->getSelectedIndex();
@@ -307,7 +307,6 @@ void MenuVehicleRadioLinkSiK::sendRadioLinkFlags(int linkIndex)
    datarate_bps = getSiKAirDataRates()[indexRate];
    
 
-   uRadioFlags &= ~(RADIO_FLAGS_MCS_MASK);
    uRadioFlags &= ~(RADIO_FLAGS_SIK_ECC | RADIO_FLAGS_SIK_LBT | RADIO_FLAGS_SIK_MCSTR);
 
    if ( 1 == m_pItemsSelect[3]->getSelectedIndex() )
@@ -331,7 +330,7 @@ void MenuVehicleRadioLinkSiK::sendRadioLinkFlags(int linkIndex)
  
    memcpy(&g_LastGoodRadioLinksParams, &(g_pCurrentModel->radioLinksParams), sizeof(type_radio_links_parameters));
 
-   g_pCurrentModel->radioLinksParams.link_radio_flags[linkIndex] = uRadioFlags;
+   g_pCurrentModel->radioLinksParams.link_radio_flags_tx[linkIndex] = uRadioFlags;
    g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[linkIndex] = datarate_bps;
    g_pCurrentModel->radioLinksParams.downlink_datarate_data_bps[linkIndex] = datarate_bps;
    g_pCurrentModel->validateRadioSettings();

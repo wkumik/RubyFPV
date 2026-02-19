@@ -197,6 +197,7 @@ void hardware_log_radio_info(radio_hw_info_t* pRadioInfo, int iCount);
 void hardware_radio_remove_stored_config();
 
 void hardware_reset_radio_enumerated_flag();
+int hardware_find_usb_radio_interfaces_info();
 int hardware_enumerate_radio_interfaces();
 int hardware_enumerate_radio_interfaces_step(int iStep);
 int hardware_radio_get_class_net_adapters_count();
@@ -220,6 +221,7 @@ int hardware_add_radio_interface_info(radio_hw_info_t* pRadioInfo);
 int hardware_get_radio_index_by_name(const char* szName);
 int hardware_get_radio_index_from_mac(const char* szMAC);
 int hardware_radio_has_low_capacity_links();
+int hardware_radio_has_wifi_cards();
 int hardware_radio_has_rtl8812au_cards();
 int hardware_radio_has_rtl8812eu_cards();
 int hardware_radio_has_rtl8733bu_cards();
@@ -232,7 +234,7 @@ int hardware_radio_driver_is_atheros_card(int iDriver);
 const char* hardware_get_radio_name(int iRadioIndex);
 const char* hardware_get_radio_description(int iRadioIndex);
 
-int hardware_radio_type_is_ieee(int iRadioType);
+int hardware_radio_type_is_wifi(int iRadioType);
 int hardware_radio_type_is_sikradio(int iRadioType);
 int hardware_radio_is_wifi_radio(radio_hw_info_t* pRadioInfo);
 int hardware_radio_is_serial_radio(radio_hw_info_t* pRadioInfo);

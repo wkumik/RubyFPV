@@ -130,6 +130,7 @@ void _increase_fast_reboot_counter()
    char szFile[MAX_FILE_PATH_SIZE];
    strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_FAST_BOOT_COUNTER);
+   hardware_file_check_and_fix_access(szFile);
    FILE* fd = fopen(szFile, "wt");
    if ( NULL == fd )
    {
@@ -138,7 +139,7 @@ void _increase_fast_reboot_counter()
    }
    fprintf(fd, "%d\n", iCounter);
    fclose(fd);
-
+   hardware_file_check_and_fix_access(szFile);
    printf("\nFast reboot counter %d -> %d\n", iCounter-1, _get_fast_reboot_counter());
 }
 
@@ -147,12 +148,13 @@ void _reset_fast_reboot_counter()
    char szFile[MAX_FILE_PATH_SIZE];
    strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_FAST_BOOT_COUNTER);
+   hardware_file_check_and_fix_access(szFile);
    FILE* fd = fopen(szFile, "wt");
    if ( NULL == fd )
       return;
    fprintf(fd, "%d\n", 0);
    fclose(fd);
-
+   hardware_file_check_and_fix_access(szFile);
    printf("\nDid reset fast boot counter.\n");
 }
 
@@ -426,14 +428,17 @@ bool _init_timestamp_and_boot_count()
    {
       if ( 1 != fscanf(fd, "%d", &s_iBootCount) )
       {
+         log_softerror_and_alarm("Failed to read boot count from file %s", szFile);
          s_iBootCount = 0;
          bFirstBoot = true;
       }
       fclose(fd);
    }
    else
+   {
+      log_softerror_and_alarm("Failed to access boot count  file %s", szFile);
       bFirstBoot = true;
-
+   }
    static long long lStartTimeStamp_ms;
    struct timespec t;
    clock_gettime(RUBY_HW_CLOCK_ID, &t);
@@ -877,10 +882,6 @@ int _step_find_console()
 
    initLogFiles();
 
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-
-   if( access( szFile, R_OK ) != -1 )
    if ( ! hw_process_exists("ruby_logger") )
    {
       hw_execute_ruby_process(NULL, "ruby_logger", NULL, NULL);
@@ -1280,15 +1281,93 @@ radio_hw_info_t sRadioInfoPrev[MAX_RADIO_INTERFACES];
 int iHwRadiosCountPrev = 0;
 int iHwRadiosSupportedCountPrev = 0;
 
-void  _step_load_init_radios()
+
+void _step_enumerate_radios()
 {
+   printf("Ruby: Enumerating supported 2.4/5.8Ghz radio interfaces...\n");
+   printf("\n");
+   log_line("Ruby: Enumerating supported 2.4/5.8Ghz radio interfaces...");
+   fflush(stdout);
+
+   hardware_enumerate_radio_interfaces_step(0);
+
+   //int iCountHighCapacityInterfaces = hardware_get_radio_interfaces_count();
+
+   if ( 0 == hardware_get_radio_interfaces_count() )
+   {
+      printf("Ruby: No 2.4/5.8 Ghz radio interfaces found!\n");
+      printf("\n");
+      log_line("Ruby: No 2.4/5.8 Ghz radio interfaces found!");
+      fflush(stdout);
+   }
+   else
+   {
+      printf("Ruby: %d radio interfaces found on 2.4/5.8 Ghz bands\n", hardware_get_radio_interfaces_count());
+      printf("\n");
+      log_line("Ruby: %d radio interfaces found on 2.4/5.8 Ghz bands", hardware_get_radio_interfaces_count());
+      fflush(stdout);
+
+      printf("Ruby: %d of %d radio interfaces are supported on 2.4/5.8 Ghz bands\n", hardware_get_supported_radio_interfaces_count(), hardware_get_radio_interfaces_count());
+      printf("\n");
+      log_line("Ruby: %d of %d radio interfaces are supported on 2.4/5.8 Ghz bands", hardware_get_supported_radio_interfaces_count(), hardware_get_radio_interfaces_count());
+      fflush(stdout);   
+   }
+   printf("Ruby: Finding SiK radio interfaces...\n");
+   log_line("Ruby: Finding SiK radio interfaces...");
+   fflush(stdout);
+
+   hardware_enumerate_radio_interfaces_step(1);
+
+   if ( ! hardware_radio_has_sik_radios() )
+   {
+      printf("Ruby: No SiK radio interfaces found.\n");
+      log_line("Ruby: No SiK radio interfaces found.");
+      fflush(stdout);
+   }
+   else
+   {
+      printf("Ruby: %d SiK radio interfaces found.\n", hardware_radio_has_sik_radios());
+      log_line("Ruby: %d SiK radio interfaces found.", hardware_radio_has_sik_radios());
+      fflush(stdout);    
+   }
+
+   printf("Ruby: Finding serial radio interfaces...\n");
+   log_line("Ruby: Finding serial radio interfaces...");
+   fflush(stdout);
+
+   int iCountAdded = hardware_radio_serial_parse_and_add_from_serial_ports_config();
+
+   if ( 0 == iCountAdded )
+   {
+      printf("Ruby: No serial radio interfaces found.\n");
+      log_line("Ruby: No serial radio interfaces found.");
+   }
+   else
+   {
+      printf("\nRuby: %d serial radio interfaces found.\n\n", iCountAdded);
+      log_line("Ruby: %d serial radio interfaces found.", iCountAdded);
+   }
+   printf("Ruby: Done finding radio interfaces.\n");
+   log_line("Ruby: Done finding radio interfaces.");
+   fflush(stdout);
+}
+
+void _step_load_init_radios()
+{
+   // First, store previous configuration;
+   // Then, load radio modules (it checks for existing known USB product ids to see what modules to load)
+   // Then enumerate and find actual network interfaces
    log_line("Loading previous radio configuration...");
    hardware_load_radio_info_into_buffers(&iHwRadiosCountPrev, &iHwRadiosSupportedCountPrev, &sRadioInfoPrev[0]);
    log_line("Loaded previous radio configuration.");
-   
+   hardware_radio_remove_stored_config();
+   hardware_reset_radio_enumerated_flag();
+
    if ( ! s_bIgnoreDrivers )
+   {
+      hardware_find_usb_radio_interfaces_info();
       hardware_radio_load_radio_modules(1);
-     
+   } 
    hardware_sleep_ms(500);
 
    char szComm[256];
@@ -1403,77 +1482,9 @@ void  _step_load_init_radios()
       printf("Ruby: Device does not have an ETH port.\n");    
    }
    fflush(stdout);
-}
 
-void _step_enumerate_radios()
-{
-   printf("Ruby: Enumerating supported 2.4/5.8Ghz radio interfaces...\n");
-   printf("\n");
-   log_line("Ruby: Enumerating supported 2.4/5.8Ghz radio interfaces...");
-   fflush(stdout);
-
-   hardware_radio_remove_stored_config();
-   hardware_enumerate_radio_interfaces_step(0);
-
-   //int iCountHighCapacityInterfaces = hardware_get_radio_interfaces_count();
-
-   if ( 0 == hardware_get_radio_interfaces_count() )
-   {
-      printf("Ruby: No 2.4/5.8 Ghz radio interfaces found!\n");
-      printf("\n");
-      log_line("Ruby: No 2.4/5.8 Ghz radio interfaces found!");
-      fflush(stdout);
-   }
-   else
-   {
-      printf("Ruby: %d radio interfaces found on 2.4/5.8 Ghz bands\n", hardware_get_radio_interfaces_count());
-      printf("\n");
-      log_line("Ruby: %d radio interfaces found on 2.4/5.8 Ghz bands", hardware_get_radio_interfaces_count());
-      fflush(stdout);
-
-      printf("Ruby: %d of %d radio interfaces are supported on 2.4/5.8 Ghz bands\n", hardware_get_supported_radio_interfaces_count(), hardware_get_radio_interfaces_count());
-      printf("\n");
-      log_line("Ruby: %d of %d radio interfaces are supported on 2.4/5.8 Ghz bands", hardware_get_supported_radio_interfaces_count(), hardware_get_radio_interfaces_count());
-      fflush(stdout);   
-   }
-   printf("Ruby: Finding SiK radio interfaces...\n");
-   log_line("Ruby: Finding SiK radio interfaces...");
-   fflush(stdout);
-
-   hardware_enumerate_radio_interfaces_step(1);
-
-   if ( ! hardware_radio_has_sik_radios() )
-   {
-      printf("Ruby: No SiK radio interfaces found.\n");
-      log_line("Ruby: No SiK radio interfaces found.");
-      fflush(stdout);
-   }
-   else
-   {
-      printf("Ruby: %d SiK radio interfaces found.\n", hardware_radio_has_sik_radios());
-      log_line("Ruby: %d SiK radio interfaces found.", hardware_radio_has_sik_radios());
-      fflush(stdout);    
-   }
-
-   printf("Ruby: Finding serial radio interfaces...\n");
-   log_line("Ruby: Finding serial radio interfaces...");
-   fflush(stdout);
-
-   int iCountAdded = hardware_radio_serial_parse_and_add_from_serial_ports_config();
-
-   if ( 0 == iCountAdded )
-   {
-      printf("Ruby: No serial radio interfaces found.\n");
-      log_line("Ruby: No serial radio interfaces found.");
-   }
-   else
-   {
-      printf("\nRuby: %d serial radio interfaces found.\n\n", iCountAdded);
-      log_line("Ruby: %d serial radio interfaces found.", iCountAdded);
-   }
-   printf("Ruby: Done finding radio interfaces.\n");
-   log_line("Ruby: Done finding radio interfaces.");
-   fflush(stdout);
+   _step_enumerate_radios();
+   _log_oipc_boot_step("Done enumerate radios.");
 }
 
 void _step_initialize_check_vehicle()
@@ -1500,6 +1511,9 @@ int main(int argc, char *argv[])
    signal(SIGQUIT, handle_sigint);
 
    char szFile[MAX_FILE_PATH_SIZE];
+   char szComm[1204];
+   char szOutput[4096];
+   szOutput[0] = 0;
 
    _increase_fast_reboot_counter();
    if ( _get_fast_reboot_counter() > 10 )
@@ -1565,8 +1579,75 @@ int main(int argc, char *argv[])
    
    _log_oipc_boot_step("Done check files.");
 
+   strcpy(szFile, FOLDER_CONFIG);
+   strcat(szFile, FILE_CONFIG_SYSTEM_TYPE);
+   hardware_file_check_and_fix_access(szFile);
+   int iPrevSystemType = -1;
+   FILE* fd = NULL;
+   if ( access(szFile, R_OK) != -1 )
+   {
+      fd = fopen(szFile, "r");
+      if ( NULL != fd )
+      {
+         u32 uTmp = 0;
+         if ( 2 != fscanf(fd, "%d %u", &iPrevSystemType, &uTmp) )
+         {
+            log_softerror_and_alarm("Failed to read previous system type.");
+            iPrevSystemType = -1;
+         }
+         else
+            log_line("Read previous system type: %d", iPrevSystemType);
+         fclose(fd);
+      }
+      else
+         log_softerror_and_alarm("Failed to open previous system type.");
+   }
+   else
+      log_softerror_and_alarm("Failed to access previous system type.");
+
+   snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "rm -rf %s%s", FOLDER_CONFIG, FILE_CONFIG_SYSTEM_TYPE);
+   hw_execute_bash_command(szComm, NULL);
+
    init_hardware_only_detection_pins();
    hardware_detectBoardAndSystemType();
+
+   if ( (iPrevSystemType >= 0) && (hardware_is_vehicle() != iPrevSystemType) )
+   {
+      log_line("---------------------------------------------");
+      log_line("Ruby: System type was changed (from %d to %d). Cleaning previous config...", iPrevSystemType, hardware_is_vehicle());
+      printf("--------------------------------\n");
+      printf("Ruby: System type was changed. Cleaning previous config...\n");
+      fflush(stdout);
+
+      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "rm -rf %s", FOLDER_CONFIG);
+      hw_execute_bash_command(szComm, NULL);
+      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "mkdir -p %s", FOLDER_CONFIG);
+      hw_execute_bash_command(szComm, NULL);
+      snprintf(szComm, sizeof(szComm)/sizeof(szComm[0]), "chmod 777 %s* 2>/dev/null", FOLDER_CONFIG);
+      hw_execute_bash_command(szComm, NULL);
+      
+      hardware_writeBoardAndSystemType();
+
+      strcpy(szFile, FOLDER_CONFIG);
+      strcat(szFile, FILE_CONFIG_BOOT_COUNT);
+      fd = fopen(szFile, "wb");
+      if ( NULL == fd )
+      {
+         log_softerror_and_alarm("Failed to open boot count config file for write [%s]", szFile);
+         fclose(fd);
+         fd = NULL;
+         printf("Ruby: Can't access config folder (%s)\n", FOLDER_CONFIG);
+      }
+      else
+      {
+         if ( s_iBootCount < 2 )
+            s_iBootCount = 2;
+         fprintf(fd, "%d\n", s_iBootCount);
+         fclose(fd);
+         fd = NULL;
+      }
+      _init_timestamp_and_boot_count();
+   }
 
    printf("-----------------------------------\n");
    if ( hardware_is_vehicle() )
@@ -1578,8 +1659,6 @@ int main(int argc, char *argv[])
    _step_check_binaries_and_resources();
    _log_oipc_boot_step("Done check binaries.");
 
-   char szComm[1204];
-   char szOutput[4096];
    szOutput[0] = 0;
 
    if ( g_bIsFirstBoot )
@@ -1594,11 +1673,6 @@ int main(int argc, char *argv[])
    _step_load_init_radios();
 
    _log_oipc_boot_step("Done init radios.");
-
-   sprintf(szComm, "rm -rf %s%s", FOLDER_RUBY_TEMP, FILE_CONFIG_SYSTEM_TYPE);
-   hw_execute_bash_command_silent(szComm, NULL);
-   sprintf(szComm, "rm -rf %s%s", FOLDER_RUBY_TEMP, FILE_CONFIG_CAMERA_TYPE);
-   hw_execute_bash_command_silent(szComm, NULL);
 
    if ( access( FILE_FORCE_RESET, R_OK ) != -1 )
    {
@@ -1638,10 +1712,6 @@ int main(int argc, char *argv[])
 
    log_line("Starting Ruby system...");
    fflush(stdout);
-   
-   _step_enumerate_radios();
-   
-   _log_oipc_boot_step("Done enumerate radios.");
 
    // Reenable serial ports that where used for SiK radio and now are just regular serial ports
    
@@ -1694,8 +1764,10 @@ int main(int argc, char *argv[])
    strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_CURRENT_VEHICLE_MODEL);
    if ( access( szFile, R_OK) == -1 )
+   {
+      log_line("Default model/current model is missing. Creating a default one...");
       first_boot_create_default_model(s_isVehicle, board_type);
-   
+   }
 
    if ( s_isVehicle )
    {
@@ -1805,7 +1877,7 @@ int main(int argc, char *argv[])
 
    strcpy(szFile, FOLDER_CONFIG);
    strcat(szFile, FILE_CONFIG_CURRENT_VERSION);
-   FILE* fd = fopen(szFile, "w");
+   fd = fopen(szFile, "w");
    if ( NULL != fd )
    {
       fprintf(fd, "%u\n", (((u32)SYSTEM_SW_VERSION_MAJOR)<<8) | (u32)SYSTEM_SW_VERSION_MINOR | (((u32)SYSTEM_SW_BUILD_NUMBER)<<16));
@@ -2033,9 +2105,9 @@ int main(int argc, char *argv[])
             log_line("Current model radio link %d is a SiK radio link. Use it to configure controller.", iSiKRadioLinkIndex+1);
             uFreq = modelVehicle.radioLinksParams.link_frequency_khz[iSiKRadioLinkIndex];
             uDataRate = modelVehicle.radioLinksParams.downlink_datarate_data_bps[iSiKRadioLinkIndex],
-            uECC = (modelVehicle.radioLinksParams.link_radio_flags[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_ECC)?1:0;
-            uLBT = (modelVehicle.radioLinksParams.link_radio_flags[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_LBT)?1:0;
-            uMCSTR = (modelVehicle.radioLinksParams.link_radio_flags[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_MCSTR)?1:0;
+            uECC = (modelVehicle.radioLinksParams.link_radio_flags_tx[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_ECC)?1:0;
+            uLBT = (modelVehicle.radioLinksParams.link_radio_flags_tx[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_LBT)?1:0;
+            uMCSTR = (modelVehicle.radioLinksParams.link_radio_flags_tx[iSiKRadioLinkIndex] & RADIO_FLAGS_SIK_MCSTR)?1:0;
          }
 
          for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )
@@ -2085,15 +2157,10 @@ int main(int argc, char *argv[])
       hardware_sleep_ms(500);
    
    log_line("Checking processes start...");
-   strcpy(szFile, FOLDER_CONFIG);
-   strcat(szFile, LOG_USE_PROCESS);
-   if( access(szFile, R_OK) != -1 )
-   {
-      if ( hw_process_exists("ruby_logger") )
-         log_line("ruby_logger is started");
-      else
-         log_error_and_alarm("ruby_logger is not running");
-   }
+   if ( hw_process_exists("ruby_logger") )
+      log_line("ruby_logger is started");
+   else
+      log_error_and_alarm("ruby_logger is not running");
 
    if ( s_isVehicle )
    {

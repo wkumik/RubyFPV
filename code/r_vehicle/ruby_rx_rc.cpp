@@ -195,6 +195,14 @@ int r_start_rx_rc(int argc, char *argv[])
    else
       log_line("Opened shared mem for RC Rx process watchdog for writing.");
 
+   log_line("RC Enabled: %s", (sModelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED)?"Yes":"No");
+   log_line("RC Channels: %d", sModelVehicle.rc_params.channelsCount);
+   log_line("RC Output Enabled: %s", (sModelVehicle.rc_params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED)?"Yes":"No");
+   log_line("RC Failsafe time: %d ms", sModelVehicle.rc_params.rc_failsafe_timeout_ms);
+   log_line("RC Input HID Id: %u", sModelVehicle.rc_params.hid_id);
+   log_line("RC Input type: %u", sModelVehicle.rc_params.inputType);
+   log_line("RC Input translation type: %d", sModelVehicle.rc_params.iRCTranslationType);
+
    log_line("Started. Running now.");
    log_line("-----------------------------");
 
@@ -377,14 +385,12 @@ int r_start_rx_rc(int argc, char *argv[])
 
       if ( ! g_bReceivedPairingRequest )
          bIsFailSafeNow = true;
-      if ( sModelVehicle.rc_params.rc_enabled )
+      if ( sModelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED )
       if ( !(s_LastReceivedRCFrame.flags & RC_FULL_FRAME_FLAGS_HAS_INPUT) )
-      {
-         //log_line("RC No input");
          bIsFailSafeNow = true;
-      }
+
       if ( NULL != s_pPHDownstreamInfoRC )
-      if ( sModelVehicle.rc_params.rc_enabled && (0 != g_TimeLastFrameReceived) &&
+      if ( (sModelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED) && (0 != g_TimeLastFrameReceived) &&
            (g_TimeLastFrameReceived + sModelVehicle.rc_params.rc_failsafe_timeout_ms <= g_TimeNow ) )
       {
          //log_line("RC timeout failsafe %d ms", sModelVehicle.rc_params.rc_failsafe_timeout_ms);
@@ -400,7 +406,7 @@ int r_start_rx_rc(int argc, char *argv[])
 
       if ( ! bIsFailSafeNow )
       if ( NULL != s_pPHDownstreamInfoRC )
-      if ( sModelVehicle.rc_params.rc_enabled && (0 != g_TimeLastFrameReceived) &&
+      if ( (sModelVehicle.rc_params.uRCFlags & RC_FLAGS_ENABLED) && (0 != g_TimeLastFrameReceived) &&
            (g_TimeLastFrameReceived + sModelVehicle.rc_params.rc_failsafe_timeout_ms > g_TimeNow) )
       {
          if ( 1 == s_pPHDownstreamInfoRC->is_failsafe )

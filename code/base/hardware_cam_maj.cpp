@@ -704,7 +704,7 @@ void _hardware_camera_maj_set_all_params()
    if ( NULL != s_pCurrentMajesticModel )
    {
       s_pCurrentMajesticModel->getVideoProfileInitialVideoBitrate(s_pCurrentMajesticModel->video_params.iCurrentVideoProfile);
-      if ( ! (s_pCurrentMajesticModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
+      if ( ! (s_pCurrentMajesticModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
       {
          s_uCurrentMajesticBitrate = s_pCurrentMajesticModel->getMaxVideoBitrateForRadioDatarate(9000000, 0);
          log_line("[HwCamMajestic] Model has not negociated radio links. Use a lower target default video bitrate for video params: %.1f Mbps", (float)s_uCurrentMajesticBitrate/1000.0/1000.0);

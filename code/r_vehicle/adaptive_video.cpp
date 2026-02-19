@@ -55,6 +55,7 @@ int s_iAdaptiveVideoLastSetKeyframeMS = 0;
 u32 s_uAdaptiveVideoLastSetVideoBitrateBPS = 0;
 u16 s_uAdaptiveVideoLastSetECScheme = 0;
 u8  s_uAdaptiveVideoLastSetDRBoost = 0xFF; // 0xFF none set, use video profile DR boost
+u8  s_uAdaptiveVideoEffectiveDRBoostRates[MAX_RADIO_INTERFACES];
 u32 s_uLastTimeAdaptiveDebugInfo = 0;
 
 bool s_bAdaptiveVideoIsFocusModeBWActive = false;
@@ -64,7 +65,7 @@ void adaptive_video_init()
 {
    log_line("[AdaptiveVideo] Init...");
    u32 uCurrentVideoBitrate = g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS;
-   int iDataRateForVideo = g_pCurrentModel->getRadioDataRateForVideoBitrate(uCurrentVideoBitrate, 0, true);
+   int iDataRateForVideo = g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(uCurrentVideoBitrate, 0, true);
    int iDRBoost = -1;
    if ( g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAG_USE_HIGHER_DATARATE )
       iDRBoost = (g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT;
@@ -83,6 +84,8 @@ void adaptive_video_reset_to_defaults()
    s_iAdaptiveVideoLastSetKeyframeMS = 0;
    s_uAdaptiveVideoLastSetVideoBitrateBPS = 0;
    s_uAdaptiveVideoLastSetDRBoost = 0xFF;
+   for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
+      s_uAdaptiveVideoEffectiveDRBoostRates[i] = 0xFF;
    s_bAdaptiveVideoIsFocusModeBWActive = false;
    s_uAdaptiveVideoTimeTurnFocusModeBWOff = 0;
    video_sources_set_temporary_bw_mode(false);
@@ -120,6 +123,9 @@ void adaptive_video_save_state()
       return;
    fprintf(fd, "%d %u\n", s_iAdaptiveVideoLastSetKeyframeMS, s_uAdaptiveVideoLastSetVideoBitrateBPS);
    fprintf(fd, "%d\n", (int)s_uAdaptiveVideoLastSetDRBoost);
+   for(int i=0; i<MAX_RADIO_INTERFACES; i++ )
+      fprintf(fd, "%d ", (int)s_uAdaptiveVideoEffectiveDRBoostRates[i]);
+   fprintf(fd, "\n");
    fclose(fd);
 }
 
@@ -152,9 +158,26 @@ void adaptive_video_load_state()
          s_uAdaptiveVideoLastSetDRBoost = 5;
    }
 
+   for(int i=0; i<MAX_RADIO_INTERFACES; i++)
+   {
+      if ( 1 != fscanf(fd, "%u", &iTmp) )
+         s_uAdaptiveVideoEffectiveDRBoostRates[i] = 0;
+      else
+      {
+         s_uAdaptiveVideoEffectiveDRBoostRates[i] = iTmp;
+         if ( (s_uAdaptiveVideoEffectiveDRBoostRates[i] != 0xFF) && (s_uAdaptiveVideoEffectiveDRBoostRates[i] > 5) )
+            s_uAdaptiveVideoEffectiveDRBoostRates[i] = 5;
+      }    
+   }
+
    if ( NULL != g_pCurrentModel )
-   if ( ! (g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
+   if ( (! (g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS)) ||
+        (! (g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED)) )
+   {
       s_uAdaptiveVideoLastSetDRBoost = 0xFF;
+      for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
+         s_uAdaptiveVideoEffectiveDRBoostRates[i] = 0xFF;
+   }
 
    fclose(fd);
 
@@ -167,13 +190,24 @@ void adaptive_video_load_state()
    log_line("[AdaptiveVideo] Done restoring temporary state.");
 }
 
-int adaptive_video_get_current_dr_boost()
+int adaptive_video_get_current_dr_boost(int iRadioInterfaceIndex)
 {
    if ( ! (g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
       return 0;
+   if ( ! (g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
+      return 0;
 
-   if ( 0xFF != s_uAdaptiveVideoLastSetDRBoost )
-      return s_uAdaptiveVideoLastSetDRBoost;
+   if ( iRadioInterfaceIndex < 0 )
+   {
+      if ( 0xFF != s_uAdaptiveVideoLastSetDRBoost )
+         return s_uAdaptiveVideoLastSetDRBoost;
+      if ( g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAG_USE_HIGHER_DATARATE )
+         return (g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT;
+      return 0;
+   }
+
+   if ( 0xFF != s_uAdaptiveVideoEffectiveDRBoostRates[iRadioInterfaceIndex] )
+      return s_uAdaptiveVideoEffectiveDRBoostRates[iRadioInterfaceIndex];
    if ( g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAG_USE_HIGHER_DATARATE )
       return (g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT;
    return 0;
@@ -237,52 +271,64 @@ void _adaptive_video_check_current_dr_boost_rate()
 {
    if ( 0 == s_uAdaptiveVideoLastSetVideoBitrateBPS )
       return;
-   int iCurrentDRBoost = adaptive_video_get_current_dr_boost();
-   if ( 0 == iCurrentDRBoost )
-      return;
 
-   int iDataRateForCurrentVideoBitrate = g_pCurrentModel->getRadioDataRateForVideoBitrate(s_uAdaptiveVideoLastSetVideoBitrateBPS, 0, false);
+   for( int iInt=0; iInt<g_pCurrentModel->radioInterfacesParams.interfaces_count; iInt++ )
+   {
+      if ( ! hardware_radio_index_is_wifi_radio(iInt) )
+         continue;
+      int iRadioLinkIndex = g_pCurrentModel->radioInterfacesParams.interface_link_id[iInt];
+      if ( (iRadioLinkIndex < 0) || (iRadioLinkIndex >= g_pCurrentModel->radioLinksParams.links_count) )
+         continue;
 
-   if ( iDataRateForCurrentVideoBitrate < 0 )
-   {
-      if ( (g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) &&
-           ((iDataRateForCurrentVideoBitrate - iCurrentDRBoost) < g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate) )
+      int iCurrentDRBoost = adaptive_video_get_current_dr_boost(iInt);
+      if ( 0 == iCurrentDRBoost )
+         continue;
+      int iDataRateForCurrentVideoBitrate = g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(s_uAdaptiveVideoLastSetVideoBitrateBPS, iRadioLinkIndex, false);
+
+      if ( iDataRateForCurrentVideoBitrate < 0 )
       {
-         log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max supported datarate %s, lower DR boost.",
-            iCurrentDRBoost, str_format_datarate_inline(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate));
-         iCurrentDRBoost--;
-         s_uAdaptiveVideoLastSetDRBoost = (u8)iCurrentDRBoost;
-      }
-      if ( (iDataRateForCurrentVideoBitrate - iCurrentDRBoost) < -MAX_MCS_INDEX-1 )
-      {
-         log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max MCS possible rate %s, lower DR boost.",
-            iCurrentDRBoost, str_format_datarate_inline(-MAX_MCS_INDEX-1));
-         iCurrentDRBoost--;
-         s_uAdaptiveVideoLastSetDRBoost = (u8)iCurrentDRBoost;
-      }
-   }
-   else
-   {
-      int iNewDR = iDataRateForCurrentVideoBitrate;
-      for( int i=0; i<getLegacyDataRatesCount(); i++ )
-      {
-         if ( getLegacyDataRatesBPS()[i] == iDataRateForCurrentVideoBitrate )
+         if ( (g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) &&
+              ((iDataRateForCurrentVideoBitrate - iCurrentDRBoost) < g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[iInt]) )
          {
-            int k = i + iCurrentDRBoost;
-            if ( k >= getLegacyDataRatesCount() )
-               k = getLegacyDataRatesCount() - 1;
-            iNewDR = getLegacyDataRatesBPS()[k];
-            break;
+            log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max supported datarate %s on radio interface %d, lower DR boost.",
+               iCurrentDRBoost, str_format_datarate_inline(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[iInt]), iInt+1);
+            if ( iCurrentDRBoost > 0 )
+               iCurrentDRBoost--;
+            s_uAdaptiveVideoEffectiveDRBoostRates[iInt] = (u8)iCurrentDRBoost;
+         }
+         if ( (iDataRateForCurrentVideoBitrate - iCurrentDRBoost) < -MAX_MCS_INDEX-1 )
+         {
+            log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max MCS possible rate %s, lower DR boost.",
+               iCurrentDRBoost, str_format_datarate_inline(-MAX_MCS_INDEX-1));
+            if ( iCurrentDRBoost > 0 )
+               iCurrentDRBoost--;
+            s_uAdaptiveVideoEffectiveDRBoostRates[iInt] = (u8)iCurrentDRBoost;
          }
       }
-
-      if ( (g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) &&
-           (iNewDR > g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedLegacyDataRate) )
+      else
       {
-         log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max supported datarate %s, lower DR boost.",
-            iCurrentDRBoost, str_format_datarate_inline(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedLegacyDataRate));
-         iCurrentDRBoost--;
-         s_uAdaptiveVideoLastSetDRBoost = (u8)iCurrentDRBoost;
+         int iNewDR = iDataRateForCurrentVideoBitrate;
+         for( int i=0; i<getLegacyDataRatesCount(); i++ )
+         {
+            if ( getLegacyDataRatesBPS()[i] == iDataRateForCurrentVideoBitrate )
+            {
+               int k = i + iCurrentDRBoost;
+               if ( k >= getLegacyDataRatesCount() )
+                  k = getLegacyDataRatesCount() - 1;
+               iNewDR = getLegacyDataRatesBPS()[k];
+               break;
+            }
+         }
+
+         if ( (g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) &&
+              (iNewDR > g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedLegacyDataRate[iInt]) )
+         {
+            log_line("[AdaptiveVideo] Current DR boost (+%d) would go over max supported datarate %s on radio interface %d, lower DR boost.",
+               iCurrentDRBoost, str_format_datarate_inline(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedLegacyDataRate[iInt]), iInt+1);
+            if ( iCurrentDRBoost > 0 )
+               iCurrentDRBoost--;
+            s_uAdaptiveVideoEffectiveDRBoostRates[iInt] = (u8)iCurrentDRBoost;
+         }
       }
    }
 }
@@ -313,7 +359,7 @@ void adaptive_video_on_message_from_controller(u32 uRequestId, u8 uFlags, u32 uV
       uCurrentVideoBitrate = g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS;
    log_line("[AdaptiveVideo] Current state: video bitrate: %.2f Mbps (datarate for it: %s), DR boost: %d of %d, EC scheme: %d/%d",
       (float)uCurrentVideoBitrate/1000.0/1000.0,
-      str_format_datarate_inline(g_pCurrentModel->getRadioDataRateForVideoBitrate(uCurrentVideoBitrate, 0, true)),
+      str_format_datarate_inline(g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(uCurrentVideoBitrate, 0, true)),
       s_uAdaptiveVideoLastSetDRBoost, (g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT,
        s_uAdaptiveVideoLastSetECScheme >> 8, s_uAdaptiveVideoLastSetECScheme & 0xFF);
 
@@ -334,11 +380,15 @@ void adaptive_video_on_message_from_controller(u32 uRequestId, u8 uFlags, u32 uV
       if ( 0 != s_uAdaptiveVideoLastSetDRBoost )
          _adaptive_video_turn_focusmode_bw_off_after(500);
 
-      if ( ! (g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS) )
+      if ( (! (g_pCurrentModel->radioLinksParams.uGlobalRadioLinksFlags & MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS)) ||
+           (! (g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED)) )
       {
          log_line("[AdaptiveVideo] Revert/set DR boost to none as vehicle has not negociated radio links yet.");
          s_uAdaptiveVideoLastSetDRBoost = 0xFF;
       }
+
+      for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
+         s_uAdaptiveVideoEffectiveDRBoostRates[i] = s_uAdaptiveVideoLastSetDRBoost;
 
       _adaptive_video_check_current_dr_boost_rate();
    }
@@ -348,13 +398,13 @@ void adaptive_video_on_message_from_controller(u32 uRequestId, u8 uFlags, u32 uV
       log_line("[AdaptiveVideo] Current video profile user set bitrate: %.1f Mbps, current video profile DR boost: %d, current DR boost: %d",
          (float)(g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS)/1000.0/1000.0,
          (g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uProfileFlags & VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK) >> VIDEO_PROFILE_FLAGS_HIGHER_DATARATE_MASK_SHIFT,
-         adaptive_video_get_current_dr_boost());
-      log_line("[AdaptiveVideo] Datarate for video profile user set bitrate: %s", str_format_datarate_inline(g_pCurrentModel->getRadioDataRateForVideoBitrate(g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS, 0, true)));
+         adaptive_video_get_current_dr_boost(-1));
+      log_line("[AdaptiveVideo] Datarate for video profile user set bitrate: %s", str_format_datarate_inline(g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(g_pCurrentModel->video_link_profiles[g_pCurrentModel->video_params.iCurrentVideoProfile].uTargetVideoBitrateBPS, 0, true)));
       s_uAdaptiveVideoLastSetVideoBitrateBPS = uVideoBitrate;
 
       _adaptive_video_check_current_dr_boost_rate();
 
-      if ( g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
+      if ( g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
       if ( s_uAdaptiveVideoLastSetVideoBitrateBPS > g_pCurrentModel->getMaxVideoBitrateSupportedForCurrentRadioLinks() )
       {
          log_line("[AdaptiveVideo] Requested desired video bitrate (%.1f Mbps) is greater than max allowed on currently negociated radio links (%.1f Mbps). Lowering the video bitrate to that.",
@@ -363,17 +413,22 @@ void adaptive_video_on_message_from_controller(u32 uRequestId, u8 uFlags, u32 uV
       }
 
       int iCurrentVideoProfile = g_pCurrentModel->video_params.iCurrentVideoProfile;
-      int iDataRateForCurrentVideoBitrate = g_pCurrentModel->getRadioDataRateForVideoBitrate(s_uAdaptiveVideoLastSetVideoBitrateBPS, 0, true);
+      int iDataRateForCurrentVideoBitrate = g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(s_uAdaptiveVideoLastSetVideoBitrateBPS, 0, true);
       log_line("[AdaptiveVideo] Datarate to be used for new video bitrate (%.1f Mbs) on radio link %d is: %s",
          (float)s_uAdaptiveVideoLastSetVideoBitrateBPS/1000.0/1000.0,
          1, str_format_datarate_inline(iDataRateForCurrentVideoBitrate));
-      if ( g_pCurrentModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
+      if ( g_pCurrentModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED )
       {
          char szTmp[64];
-         str_getDataRateDescriptionNoSufix(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedLegacyDataRate, szTmp);
-         log_line("[AdaptiveVideo] Current model negociated radio links max supported legacy DR rate is: %s", szTmp);
-         str_getDataRateDescriptionNoSufix(g_pCurrentModel->radioRuntimeCapabilities.iMaxSupportedMCSDataRate, szTmp);
-         log_line("[AdaptiveVideo] Current model negociated radio links max supported MCS DR rate is: %s", szTmp);
+         for( int i=0; i<g_pCurrentModel->radioInterfacesParams.interfaces_count; i++ )
+         {
+            if ( !hardware_radio_index_is_wifi_radio(i) )
+               continue;
+            str_getDataRateDescriptionNoSufix(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedLegacyDataRate[i], szTmp);
+            log_line("[AdaptiveVideo] Current model negociated radio links max supported legacy DR rate for radio int %d, radio link %d is: %s", i+1, g_pCurrentModel->radioInterfacesParams.interface_link_id[i]+1, szTmp);
+            str_getDataRateDescriptionNoSufix(g_pCurrentModel->radioInterfacesRuntimeCapab.iMaxSupportedMCSDataRate[i], szTmp);
+            log_line("[AdaptiveVideo] Current model negociated radio links max supported MCS DR rate for radio int %d, radio link %d is: %s", i+1, g_pCurrentModel->radioInterfacesParams.interface_link_id[i]+1, szTmp);
+         }
       }
       else
          log_line("[AdaptiveVideo] Current model has not negociated radio links yet.");
@@ -416,7 +471,7 @@ void adaptive_video_on_message_from_controller(u32 uRequestId, u8 uFlags, u32 uV
             video_sources_set_video_bitrate(s_uAdaptiveVideoLastSetVideoBitrateBPS, iIPQDelta, "AdaptiveVideo");
          log_line("[AdaptiveVideo] Did set new video bitrate of %.2f Mbps; datarate for new video bitrate: %s",
             (float)video_sources_get_last_set_video_bitrate()/1000.0/1000.0,
-            str_format_datarate_inline(g_pCurrentModel->getRadioDataRateForVideoBitrate(video_sources_get_last_set_video_bitrate(), 0, true)));
+            str_format_datarate_inline(g_pCurrentModel->getRequiredRadioDataRateForVideoBitrate(video_sources_get_last_set_video_bitrate(), 0, true)));
       }
 
       log_line("[AdaptiveVideo] Is BW focus mode enabled? %s", (g_pCurrentModel->video_params.uVideoExtraFlags & VIDEO_FLAG_ENABLE_FOCUS_MODE_BW)?"Yes":"No");

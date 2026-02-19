@@ -46,6 +46,7 @@
 #include "timers.h"
 #include "warnings.h"
 #include "menu/menu.h"
+#include "menu/menu_confirmation.h"
 #include "menu/menu_confirmation_delete_logs.h"
 
 u32 g_uPersistentAllAlarmsVehicle = 0;
@@ -607,6 +608,21 @@ void alarms_add_from_local(u32 uAlarms, u32 uFlags1, u32 uFlags2)
 
    if ( uAlarms & ALARM_ID_GENERIC )
    {
+      if ( uFlags1 == ALARM_ID_GENERIC_TYPE_UNKNOWN_VEHICLE )
+      {
+         static u32 s_uTimeLastShownUnknownVehicle = 0;
+         if ( (0 == s_uTimeLastShownUnknownVehicle) || (g_TimeNow > s_uTimeLastShownUnknownVehicle + 10000) )
+         if ( ! menu_has_menu(MENU_ID_CONFIRMATION + 752*1000) )
+         {
+            s_uTimeLastShownUnknownVehicle = g_TimeNow;
+            snprintf(szAlarmText, sizeof(szAlarmText)/sizeof(szAlarmText[0]), "An unknown vehicle was detected on current %s frequency. Go to [Search] where you can search and pair with this vehicle if you want to.", str_format_frequency(uFlags2));
+            MenuConfirmation* pMenu = new MenuConfirmation(L("Unknown Vehicle Detected"), szAlarmText, 752, true);
+            pMenu->setOkActionText(L("Ok"));
+            add_menu_to_stack(pMenu);
+         }
+         return;
+      }
+
       if ( uFlags1 == ALARM_ID_GENERIC_TYPE_MISSED_TELEMETRY_DATA )
       {
          osd_start_flash_osd_elements();

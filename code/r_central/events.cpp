@@ -173,8 +173,10 @@ void onMainVehicleChanged(bool bRemovePreviousVehicleState)
       for( int i=0; i<g_pCurrentModel->radioLinksParams.links_count; i++ )
       {
          char szBuff[128];
-         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags[i], szBuff);
-         log_line("Vechile radio link %d radio flags: %s", i+1, szBuff);
+         char szBuff2[128];
+         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_tx[i], szBuff);
+         str_get_radio_frame_flags_description(g_pCurrentModel->radioLinksParams.link_radio_flags_rx[i], szBuff2);
+         log_line("Vechile radio link %d radio tx flags: %s, radio rx flags: %s", i+1, szBuff, szBuff2);
       }
    }
 
@@ -515,7 +517,7 @@ bool _onEventCheck_NegociateRadioLinks(Model* pCurrentlyStoredModel, Model* pNew
    }
 
    if ( NULL != pNewReceivedModel )
-   if ( !(pNewReceivedModel->radioRuntimeCapabilities.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
+   if ( !(pNewReceivedModel->radioInterfacesRuntimeCapab.uFlagsRuntimeCapab & MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED) )
    {
       log_line("Negociate radio links? Yes, received model has no computed runtime radio links capabilities.");
       g_bMustNegociateRadioLinksFlag = true;
@@ -547,11 +549,12 @@ bool _onEventCheck_NegociateRadioLinks(Model* pCurrentlyStoredModel, Model* pNew
        }
    }
 
-   if ( g_bLinkWizardAfterUpdate )
-   {
-      log_line("Negociate radio links? Yes, an update was done. Must show radio link wizard.");
-      g_bMustNegociateRadioLinksFlag = true;
-   }
+   //if ( g_bLinkWizardAfterUpdate )
+   //{
+   //   log_line("Negociate radio links? Yes, an update was done. Must show radio link wizard.");
+   //   g_bMustNegociateRadioLinksFlag = true;
+   //}
+
    //if ( g_bDidAnUpdate )
    //   g_bMustNegociateRadioLinksFlag = false;
 
@@ -1149,11 +1152,13 @@ bool onEventReceivedModelSettings(u32 uVehicleId, u8* pBuffer, int length, bool 
    for( int i=0; i<s_pEventsLastRecvModelSettings->radioLinksParams.links_count; i++ )
    {
       char szBuff[128];
+      char szBuff2[128];
       char szBuffC[128];
 
       str_get_radio_capabilities_description(s_pEventsLastRecvModelSettings->radioLinksParams.link_capabilities_flags[i], szBuffC);   
-      str_get_radio_frame_flags_description(s_pEventsLastRecvModelSettings->radioLinksParams.link_radio_flags[i], szBuff);
-      log_line("Currently received temp model info: radio link %d: %s, capabilities flags: %s, radio flags: %s", i+1, str_format_frequency(s_pEventsLastRecvModelSettings->radioLinksParams.link_frequency_khz[i]), szBuffC, szBuff);
+      str_get_radio_frame_flags_description(s_pEventsLastRecvModelSettings->radioLinksParams.link_radio_flags_tx[i], szBuff);
+      str_get_radio_frame_flags_description(s_pEventsLastRecvModelSettings->radioLinksParams.link_radio_flags_rx[i], szBuff2);
+      log_line("Currently received temp model info: radio link %d: %s, capabilities flags: %s, radio tx flags: %s, radio rx flags: %s", i+1, str_format_frequency(s_pEventsLastRecvModelSettings->radioLinksParams.link_frequency_khz[i]), szBuffC, szBuff, szBuff2);
    }
 
    if ( pCurrentlyStoredModel->uVehicleId != s_pEventsLastRecvModelSettings->uVehicleId )

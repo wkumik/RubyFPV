@@ -3,10 +3,11 @@
 #include "menu_item_select.h"
 #include "menu_confirmation.h"
 
-#define MAX_NEGOCIATE_TESTS 100
+#define MAX_NEGOCIATE_TESTS 200
 
 typedef struct
 {
+   int iVehicleRadioInterface;
    int iVehicleRadioLink;
    int iDataRateToTest;
    u32 uRadioFlagsToTest;
@@ -25,6 +26,7 @@ typedef struct
    u32 uTimeStarted;
    u32 uTimeEnded;
    u32 uDurationToTest;
+   u32 uExtraStartDelay;
    u32 uTimeLastSendToVehicle;
    u32 uTimeLastConfirmationFromVehicle;
    int iCountSendStarts;
@@ -33,6 +35,7 @@ typedef struct
    int iRadioInterfacesRXPackets[MAX_RADIO_INTERFACES];
    int iRadioInterfacesRxLostPackets[MAX_RADIO_INTERFACES];
    bool bReceivedEnoughData;
+   bool bComputedQualities;
    float fQualityCards[MAX_RADIO_INTERFACES];
    float fComputedQualityMin;
    float fComputedQualityMax;
@@ -44,7 +47,6 @@ class MenuNegociateRadio: public Menu
       MenuNegociateRadio();
       virtual ~MenuNegociateRadio();
       virtual void Render();
-      virtual void valuesToUI();
       virtual int onBack();
       virtual bool periodicLoop();
       virtual void onVehicleCommandFinished(u32 uCommandId, u32 uCommandType, bool bSucceeded);
@@ -60,10 +62,10 @@ class MenuNegociateRadio: public Menu
       char* _getTestType(int iTestIndex);
       void _storeCurrentTestDataFromRadioStats();
       void _logTestData(int iTestIndex);
-      float _getMaxComputedQualityForDatarate(int iDatarate, int* pTestIndex);
-      float _getMinComputedQualityForDatarate(int iDatarate, int* pTestIndex);
-      void _computeQualities();
-      bool _compute_radio_flags_to_apply();
+      float _getMaxComputedQualityForDatarate(int iVehicleRadioInterface, int iDatarate, int* pTestIndex);
+      float _getMinComputedQualityForDatarate(int iVehicleRadioInterface, int iDatarate, int* pTestIndex);
+      void _computeQualitiesSoFarForCurrentTest();
+      bool _compute_radio_flags_to_apply(int iVehicleRadioInterfaceIndex);
       bool _compute_settings_to_apply();
       
       void _send_keep_alive_to_vehicle();
@@ -92,37 +94,43 @@ class MenuNegociateRadio: public Menu
       u32 m_uShowTime;
       bool m_bSkipRateTests;
 
-      int m_iMainVehicleLinkIndexToTest;
+      int m_iCountInterfacesToTest;
+      bool m_bTestInterfaceIndex[MAX_RADIO_INTERFACES];
       int m_iState;
       int m_iUserState;
       bool m_bCanceled;
       bool m_bFailed;
       bool m_bUpdated;
 
-      type_radio_runtime_capabilities_parameters m_RadioRuntimeCapabilitiesToApply;
+      type_radio_interfaces_runtime_capabilities_parameters m_RadioInterfacesRuntimeCapabilitiesToApply;
       video_parameters_t m_VideoParamsToApply;
       type_video_link_profile m_VideoProfilesToApply[MAX_VIDEO_LINK_PROFILES];
-      u32 m_uRadioFlagsToApply;
-      int m_iTxPowerMwToApply;
+      u32 m_uRadioLinksTxFlagsToApply[MAX_RADIO_INTERFACES];
+      u32 m_uRadioLinksRxFlagsToApply[MAX_RADIO_INTERFACES];
+      u32 m_uRadioInterfacesSupportedRadioFlags[MAX_RADIO_INTERFACES];
       u32 m_uTimeStartedVehicleOperation;
       u32 m_uLastTimeSentVehicleOperation;
 
       type_negociate_radio_step m_TestsInfo[MAX_NEGOCIATE_TESTS];
       int m_iTestsCount;
-      int m_iIndexFirstRadioFlagsTest;
-      int m_iIndexLastRadioFlagsTest;
-      int m_iIndexFirstDatarateLegacyTest;
-      int m_iIndexFirstDatarateMCSTest;
-      int m_iIndexLastDatarateLegacyTest;
-      int m_iIndexLastDatarateMCSTest;
-      int m_iIndexFirstRadioPowersTest;
-      int m_iIndexFirstRadioPowersTestMCS;
-      int m_iIndexLastRadioPowersTestMCS;
-      int m_iTestIndexSTBCV;
-      int m_iTestIndexLDPVV;
-      int m_iTestIndexSTBCLDPCV;
       int m_iCurrentTestIndex;
-      int m_iCountSucceededTests;
-      int m_iCountFailedTests;
-      int m_iCountFailedTestsDatarates;
+      int m_iCurrentTestRadioInterfaceIndex;
+
+      int m_iIndexFirstRadioFlagsTest[MAX_RADIO_INTERFACES];
+      int m_iIndexLastRadioFlagsTest[MAX_RADIO_INTERFACES];
+      int m_iIndexFirstDatarateLegacyTest[MAX_RADIO_INTERFACES];
+      int m_iIndexFirstDatarateMCSTest[MAX_RADIO_INTERFACES];
+      int m_iIndexLastDatarateLegacyTest[MAX_RADIO_INTERFACES];
+      int m_iIndexLastDatarateMCSTest[MAX_RADIO_INTERFACES];
+      int m_iIndexFirstRadioPowersTest[MAX_RADIO_INTERFACES];
+      int m_iIndexFirstRadioPowersTestMCS[MAX_RADIO_INTERFACES];
+      int m_iIndexLastRadioPowersTestMCS[MAX_RADIO_INTERFACES];
+      int m_iIndexFirstRadioInterfaceTest[MAX_RADIO_INTERFACES];
+      int m_iIndexLastRadioInterfaceTest[MAX_RADIO_INTERFACES];
+      int m_iTestIndexSTBCV[MAX_RADIO_INTERFACES];
+      int m_iTestIndexLDPVV[MAX_RADIO_INTERFACES];
+      int m_iTestIndexSTBCLDPCV[MAX_RADIO_INTERFACES];
+      int m_iCountSucceededTests[MAX_RADIO_INTERFACES];
+      int m_iCountFailedTests[MAX_RADIO_INTERFACES];
+      int m_iCountFailedTestsDatarates[MAX_RADIO_INTERFACES];
 };

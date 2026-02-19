@@ -2,7 +2,6 @@
 #include "../base/hardware.h"
 #include "../base/models.h"
 
-#define CONTROLLER_INTERFACES_STAMP_ID "V.7.2"
 #define CONTROLLER_INTERFACES_MAX_LIST_SIZE 100
 
 #define CONTROLLER_MAX_INPUT_INTERFACES 40
@@ -38,8 +37,7 @@ typedef struct
    char* szUserDefinedName;
    char szMAC[MAX_MAC_LENGTH];
    u32 capabilities_flags;
-   //Deprecated in 9.5
-   //int datarateBPSMCS; // positive: bps; negative: mcs rate; 0: none
+   u32 uSupportedRadioFlags;
    int iRawPowerLevel;
    int iInternal;
 } t_ControllerRadioInterfaceInfo;

@@ -445,10 +445,10 @@ void executeQuickActionToggleRCEnabled()
    rc_parameters_t params;
    memcpy(&params, &g_pCurrentModel->rc_params, sizeof(rc_parameters_t));
 
-   if ( params.flags & RC_FLAGS_OUTPUT_ENABLED )
-      params.flags &= (~RC_FLAGS_OUTPUT_ENABLED);
+   if ( params.uRCFlags & RC_FLAGS_OUTPUT_ENABLED )
+      params.uRCFlags &= (~RC_FLAGS_OUTPUT_ENABLED);
    else
-      params.flags |= RC_FLAGS_OUTPUT_ENABLED;
+      params.uRCFlags |= RC_FLAGS_OUTPUT_ENABLED;
    handle_commands_abandon_command();
    handle_commands_send_to_vehicle(COMMAND_ID_SET_RC_PARAMS, 0, (u8*)&params, sizeof(rc_parameters_t));
 }

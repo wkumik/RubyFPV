@@ -185,7 +185,7 @@ void render_osd_layout_lean()
    bool bHasRubyRC = false;
    
    if ( NULL != g_pCurrentModel )
-   if ( g_pCurrentModel->rc_params.rc_enabled && (!g_pCurrentModel->is_spectator) )
+   if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (!g_pCurrentModel->is_spectator) )
       bHasRubyRC = true;
  
    if ( NULL != g_pCurrentModel && g_VehiclesRuntimeInfo[osd_get_current_data_source_vehicle_index()].bGotRubyTelemetryInfo )
@@ -726,7 +726,7 @@ void render_osd_layout_lean_extended()
       bool bHasRubyRC = false;
    
       if ( NULL != g_pCurrentModel )
-      if ( g_pCurrentModel->rc_params.rc_enabled && (!g_pCurrentModel->is_spectator) )
+      if ( (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED) && (!g_pCurrentModel->is_spectator) )
          bHasRubyRC = true;
  
       if ( NULL != g_pCurrentModel && g_VehiclesRuntimeInfo[osd_get_current_data_source_vehicle_index()].bGotRubyTelemetryInfo )

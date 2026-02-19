@@ -53,11 +53,11 @@ void ruby_set_is_first_pairing_done();
 
 void reset_sik_state_info(t_sik_radio_state* pState);
 
-float compute_controller_rc_value(Model* pModel, int nChannel, float prevRCValue, t_shared_mem_i2c_controller_rc_in* pRCIn, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec);
+int compute_controller_rc_value(Model* pModel, int nChannel, int prevRCValue, t_shared_mem_i2c_controller_rc_in* pRCIn, hw_joystick_info_t* pJoystick, t_ControllerInputInterface* pCtrlInterface, u32 miliSec);
 u32 get_rc_channel_failsafe_type(Model* pModel, int nChannel);
 int get_rc_channel_failsafe_value(Model* pModel, int nChannel, int prevRCValue);
 
-float compute_output_rc_value(Model* pModel, int nChannel, float prevRCValue, float fNormalizedValue, u32 miliSec);
+int compute_output_rc_value(Model* pModel, int nChannel, int prevRCValue, float fNormalizedValue, u32 miliSec);
 
 void log_current_full_radio_configuration(Model* pModel);
 

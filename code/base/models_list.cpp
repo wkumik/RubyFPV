@@ -376,7 +376,7 @@ void replaceModel(int index, Model* pModel)
       log_line("Current model VID: %u, ptr: %X", s_pCurrentModel->uVehicleId, s_pCurrentModel);
 }
 
-Model* findModelWithId(u32 uVehicleId, u32 uSrcId)
+Model* findModelWithId2(u32 uVehicleId, u32 uSrcId, bool bLog)
 {
    if ( ! s_bLoadedAllModels )
    {
@@ -395,16 +395,24 @@ Model* findModelWithId(u32 uVehicleId, u32 uSrcId)
       if ( s_pModelsSpectator[i]->uVehicleId == uVehicleId )
          return s_pModelsSpectator[i];
 
-   log_softerror_and_alarm("Tried to find an inexistent VID: %u (source id: %u). Current loaded vehicles:", uVehicleId, uSrcId);
-   for( int i=0; i<s_iModelsCount; i++ )
-      log_softerror_and_alarm("Vehicle Ctrlr %d: %u", i, s_pModels[i]->uVehicleId);
-   for( int i=0; i<s_iModelsSpectatorCount; i++ )
-      log_softerror_and_alarm("Vehicle Spect %d: %u", i, s_pModelsSpectator[i]->uVehicleId);
-   if ( NULL == s_pCurrentModel )
-      log_softerror_and_alarm("Current vehicle: NULL");
-   else
-      log_softerror_and_alarm("Current vehicle: %u", s_pCurrentModel->uVehicleId);
+   if ( bLog )
+   {
+      log_softerror_and_alarm("Tried to find an inexistent VID: %u (source id: %u). Current loaded vehicles:", uVehicleId, uSrcId);
+      for( int i=0; i<s_iModelsCount; i++ )
+         log_softerror_and_alarm("Vehicle Ctrlr %d: %u", i, s_pModels[i]->uVehicleId);
+      for( int i=0; i<s_iModelsSpectatorCount; i++ )
+         log_softerror_and_alarm("Vehicle Spect %d: %u", i, s_pModelsSpectator[i]->uVehicleId);
+      if ( NULL == s_pCurrentModel )
+         log_softerror_and_alarm("Current vehicle: NULL");
+      else
+         log_softerror_and_alarm("Current vehicle: %u", s_pCurrentModel->uVehicleId);
+   }
    return NULL;
+}
+
+Model* findModelWithId(u32 uVehicleId, u32 uSrcId)
+{
+   return findModelWithId2(uVehicleId, uSrcId, true);
 }
 
 bool modelIsInControllerList(u32 uVehicleId)

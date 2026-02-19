@@ -339,11 +339,7 @@ u32 getRealDataRateFromMCSRate(int mcsIndex, int iHT40)
 u32 getRealDataRateFromRadioDataRate(int dataRateBPS, u32 uRadioFlags, int iIsDownlink)
 {
    u32 iMultiply = 1;
-   if ( uRadioFlags & RADIO_FLAG_HT40_VEHICLE )
-   if ( iIsDownlink )
-      iMultiply = 2;
-   if ( uRadioFlags & RADIO_FLAG_HT40_CONTROLLER )
-   if ( ! iIsDownlink )
+   if ( uRadioFlags & RADIO_FLAG_HT40 )
       iMultiply = 2;
    
    if ( -100 == dataRateBPS )

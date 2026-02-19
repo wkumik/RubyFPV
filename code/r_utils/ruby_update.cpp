@@ -95,6 +95,31 @@ void update_openipc_cpu(Model* pModel)
 }
 
 
+void do_update_to_118()
+{
+   log_line("Doing update to 11.8");
+ 
+   if ( ! s_isVehicle )
+   {
+      load_ControllerSettings();
+      ControllerSettings* pCS = get_ControllerSettings();
+      save_ControllerSettings();
+      load_Preferences();
+      save_Preferences();
+   }
+
+   Model* pModel = getCurrentModel();
+   if ( NULL == pModel )
+      return;
+
+   for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
+   {
+      pModel->radioInterfacesParams.interface_supported_radio_flags[i] = RADIO_FLAGS_FRAME_TYPE_DATA | RADIO_FLAGS_USE_LEGACY_DATARATES | RADIO_FLAGS_USE_MCS_DATARATES | RADIO_FLAG_HT40;
+   }
+   pModel->validateRadioSettings();
+   log_line("Updated model VID %u (%s) to v11.8", pModel->uVehicleId, pModel->getLongName());
+}
+
 void do_update_to_117()
 {
    log_line("Doing update to 11.7");
@@ -185,6 +210,10 @@ void do_update_to_117()
       pModel->convertECPercentageToData(&(pModel->video_link_profiles[i]));
    }
 
+   for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
+   {
+      pModel->radioInterfacesParams.interface_supported_radio_flags[i] = RADIO_FLAGS_FRAME_TYPE_DATA | RADIO_FLAGS_USE_LEGACY_DATARATES | RADIO_FLAGS_USE_MCS_DATARATES | RADIO_FLAG_HT40;
+   }
    log_line("Updated model VID %u (%s) to v11.7", pModel->uVehicleId, pModel->getLongName());
 }
 
@@ -230,8 +259,7 @@ void do_update_to_116()
          pModel->resetRadioLinkDataRatesAndFlags(i);
    }
 
-   pModel->radioLinksParams.uGlobalRadioLinksFlags &= ~(MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS);
-   pModel->radioRuntimeCapabilities.uFlagsRuntimeCapab &= ~MODEL_RUNTIME_RADIO_CAPAB_FLAG_COMPUTED;
+   pModel->resetNegociatedRadioAndRadioCapabilitiesFlags();
 
    pModel->resetProcessesParams();
    pModel->resetAdaptiveVideoParams(-1);
@@ -388,9 +416,6 @@ void do_update_to_113()
          pModel->video_link_profiles[i].uTargetVideoBitrateBPS = DEFAULT_VIDEO_BITRATE_OPIC_SIGMASTAR;
    }
 
-
-   pModel->radioRuntimeCapabilities.uSupportedMCSFlags = RADIO_FLAGS_FRAME_TYPE_DATA;
-
    for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
    {
       pModel->radioLinksParams.uMaxLinkLoadPercent[i] = DEFAULT_RADIO_LINK_LOAD_PERCENT;
@@ -501,7 +526,7 @@ void do_update_to_112()
 
    for( int i=0; i<MAX_RADIO_INTERFACES; i++ )
    {
-      pModel->radioLinksParams.link_radio_flags[i] = RADIO_FLAGS_USE_LEGACY_DATARATES | RADIO_FLAGS_FRAME_TYPE_DATA;
+      pModel->radioLinksParams.link_radio_flags_tx[i] = RADIO_FLAGS_USE_LEGACY_DATARATES | RADIO_FLAGS_FRAME_TYPE_DATA;
       // Auto data rates
       pModel->radioLinksParams.downlink_datarate_video_bps[i] = 0;
       pModel->radioLinksParams.downlink_datarate_data_bps[i] = DEFAULT_RADIO_DATARATE_DATA;
@@ -510,8 +535,7 @@ void do_update_to_112()
       pModel->radioLinksParams.uMaxLinkLoadPercent[i] = DEFAULT_RADIO_LINK_LOAD_PERCENT;
    }
 
-   pModel->radioLinksParams.uGlobalRadioLinksFlags &= ~(MODEL_RADIOLINKS_FLAGS_HAS_NEGOCIATED_LINKS);
-   pModel->radioRuntimeCapabilities.uFlagsRuntimeCapab = 0;
+   pModel->resetNegociatedRadioAndRadioCapabilitiesFlags();
    pModel->validateRadioSettings();
    if ( hardware_board_is_openipc(hardware_getBoardType()) )
       hw_execute_bash_command("rm -rf /etc/init.d/S*majestic", NULL);
@@ -978,6 +1002,8 @@ int main(int argc, char *argv[])
       do_update_to_116();
    if ( (iMajor < 11) || (iMajor == 11 && iMinor <= 7) )
       do_update_to_117();
+   if ( (iMajor < 11) || (iMajor == 11 && iMinor <= 8) )
+      do_update_to_118();
 
    saveCurrentModel();
 

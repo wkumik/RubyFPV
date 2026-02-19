@@ -472,7 +472,8 @@ void handle_commands_send_current_command()
    
    send_packet_to_router(buffer, PH.total_length);
  
-   log_line_commands("[Commands] [Sent] to vId %u, cmd nb. %d, retry %d, type [%s], param: %u, buff len: %d]", g_pCurrentModel->uVehicleId, s_CommandCounter, s_CommandResendCounter, commands_get_description(s_CommandType), s_CommandParam, s_CommandBufferLength);
+   log_line_commands("[Commands] [Sent] to vId %u, cmd nb. %d, retry %d, type [%s], param: %u, total size: %d bytes, PH: %d bytes, PHC: %d bytes, extra len: %d bytes", g_pCurrentModel->uVehicleId, s_CommandCounter, s_CommandResendCounter, commands_get_description(s_CommandType), s_CommandParam,
+     PH.total_length, sizeof(t_packet_header), sizeof(t_packet_header_command), s_CommandBufferLength);
 }
 
 
@@ -1862,12 +1863,15 @@ bool handle_last_command_result()
       }
       case COMMAND_ID_SET_RC_PARAMS:
          {
-            bool bPrevRC = g_pCurrentModel->rc_params.rc_enabled;
+            bool bPrevRC = (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?true:false;
             memcpy(&g_pCurrentModel->rc_params, s_CommandBuffer, sizeof(rc_parameters_t));
+            bool bNowRC = (g_pCurrentModel->rc_params.uRCFlags & RC_FLAGS_ENABLED)?true:false;
             saveControllerModel(g_pCurrentModel);
-            if ( bPrevRC != g_pCurrentModel->rc_params.rc_enabled )
+            log_line("Did set new HID Id %u to vehicle, rc struct size: %d bytes", g_pCurrentModel->rc_params.hid_id, sizeof(rc_parameters_t));
+
+            if ( bPrevRC != bNowRC )
             {
-               if ( g_pCurrentModel->rc_params.rc_enabled )
+               if ( bNowRC )
                {
                   Popup* p = new Popup(true, "RC link is enabled", 3 );
                   p->setIconId(g_idIconJoystick, get_Color_IconWarning());

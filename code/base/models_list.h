@@ -23,6 +23,7 @@ Model* getModelAtIndex(int index);
 Model* addNewModel(u32 uVehicleId, int iVersionMajor, int iVersionMinor);
 void replaceModel(int index, Model* pModel);
 Model* findModelWithId(u32 uVehicleId, u32 uSrcId);
+Model* findModelWithId2(u32 uVehicleId, u32 uSrcId, bool bLog);
 bool modelIsInControllerList(u32 uVehicleId);
 bool modelIsInSpectatorList(u32 uVehicleId);
 bool controllerHasModelWithId(u32 uVehicleId);
