@@ -25,10 +25,12 @@ Status as of 2026-04-14.
 - [x] Validated venc → majestic-stub → Ruby → GS (using only original Ruby binaries) — proves RTP compat
 - [x] Validated full integrated path: patched Ruby auto-detects waybeam via `/etc/ruby_encoder`, spawns `/usr/bin/venc` with `LD_LIBRARY_PATH`, ingests RTP from venc, transmits via WFB, **video on GS confirmed**
 
-## Phase 1.5 — GS-side cosmetic fixes (in progress)
+## Phase 1.5 — GS-side cosmetic fixes (mostly done)
 
-- [ ] Fix "Video capture process malfunctioning" alarm firing once at boot (5s data-receive timeout too tight for waybeam startup)
-- [ ] Fix bitrate not reported on GS (telemetry path may have majestic-specific assumption)
+- [x] Fix "Video capture process malfunctioning" alarm — bumped post-start grace from 2s to 12s for waybeam (sensor unlock + ISP load take longer than majestic). Verified clean on 22.04-built binary.
+- [x] Fix radiotap parse spam ("rx pcap ERROR: radiotap_iterator_init < 0") — root cause was libpcap ABI mismatch (Ubuntu 24.04 64-bit time_t vs vehicle 32-bit time_t). Resolved by switching build env to Ubuntu 22.04 (still 32-bit time_t).
+- [x] Fix multi-instance ruby_rt_vehicle spiral — was a downstream consequence of the radiotap flood blocking the main loop. Resolved by libpcap fix above.
+- [ ] Fix "Set Capture Video Bitrate: 0 bps / NA" on the OSD stats window — pre-existing upstream bug (Petru disabled the display in commit `db0e3185` 2024-11-07 with comment "To fix or remove"). NOT a waybeam regression — same field was already empty with majestic.
 - [ ] Audit `r_central` / `r_station` for any majestic-specific code paths the controller-side still uses
 - [ ] Make controller-side aware of which backend the vehicle is running (could come over telemetry as a string field)
 
@@ -72,7 +74,7 @@ Status as of 2026-04-14.
 ### Build / deploy quirks
 
 - [ ] `make all RUBY_BUILD_ENV=openipc` fails on Ubuntu 24.04 glibc 2.39 due to fortified `open()` requiring mode bits in `code/r_station/processor_rx_audio.cpp` — pre-existing source bug, unrelated to integration; workaround: `make vehicle` to skip station-side
-- [ ] libpcap ABI mismatch: WSL Ubuntu 24.04 builds against libpcap 0.8 ABI, RunCam vehicle has libpcap 1.10.5; symlink workaround works but generates `radiotap_iterator_init < 0` softerrors. Proper fix: build against vehicle's libpcap headers OR static-link libpcap
+- [x] libpcap/time_t ABI mismatch — **FIXED** by building on Ubuntu 22.04 (32-bit time_t). Ubuntu 24.04 (libt64 transition, 64-bit time_t) produces binaries incompatible with Buildroot-based OpenIPC vehicles. Use `wsl -d Ubuntu-22.04 -u root` for all builds going forward. Also need: `ln -sf /usr/lib/libpcap.so.1.10.5 /usr/lib/libpcap.so.0.8` on vehicle (libpcap SONAME bridge — libpcap 1.10.x exports as 0.8 SONAME on Ubuntu).
 
 ### Hardware constraints (RunCam WifiLink v2 / SSC338Q)
 
