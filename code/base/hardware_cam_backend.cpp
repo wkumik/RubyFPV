@@ -102,10 +102,14 @@ void hwcam_be_format_start_cmd(char* dst, int dst_sz, bool bLogToFile, const cha
    const char* szBin = hwcam_be_binary_path();
    // Majestic needs '-s' flag to read stdin/config; waybeam takes no flags (reads /etc/venc.json).
    const char* szFlags = (hwcam_be_get() == HWCAM_BE_WAYBEAM) ? "" : "-s ";
+   // Waybeam dlopens MI vendor libs at runtime; on systems where they're not in
+   // the default loader path we ship them under /usr/lib/venc/ to avoid
+   // overwriting the system-installed majestic-compatible libs.
+   const char* szEnv = (hwcam_be_get() == HWCAM_BE_WAYBEAM) ? "LD_LIBRARY_PATH=/usr/lib/venc " : "";
    if ( bLogToFile && (NULL != szLogPath) && (0 != szLogPath[0]) )
-      snprintf(dst, dst_sz, "%s %s2>/dev/null 1>%s &", szBin, szFlags, szLogPath);
+      snprintf(dst, dst_sz, "%s%s %s2>/dev/null 1>%s &", szEnv, szBin, szFlags, szLogPath);
    else
-      snprintf(dst, dst_sz, "%s %s2>/dev/null 1>/dev/null &", szBin, szFlags);
+      snprintf(dst, dst_sz, "%s%s %s2>/dev/null 1>/dev/null &", szEnv, szBin, szFlags);
 }
 
 const char* hwcam_be_reload_cmd()
