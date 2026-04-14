@@ -160,9 +160,10 @@ On OpenIPC builds Ruby can drive either encoder:
 - **waybeam** (OpenIPC/waybeam_venc v0.7+) — `/usr/bin/venc` + `/etc/venc.json`, `json_cli -s` / HTTP `/api/v1/restart` to reload. 1:1 RTP-compatible with majestic (same UDP:5600 ingest, camelCase `/api/v1/set?...` alias table). Extra features Ruby now uses: `/request/idr` on RTP-seq desync.
 
 Selection: runtime detection in `code/base/hardware_cam_backend.cpp`.
-- Override via `/boot/encoder` file containing `majestic` or `venc`.
+- Override via `/etc/ruby_encoder` file containing `majestic` or `venc`.
 - Otherwise: waybeam if `/usr/bin/venc` is executable; else majestic.
 - Cached after first call; log line `[HwCamBE] Detected encoder backend: ...` on boot.
+- `/etc` is chosen because OpenIPC SSC338Q has no `/boot` partition; `/etc` is persistent in the overlay.
 
 All existing call sites go through `hwcam_be_*()` helpers (process name, config path, reload/kill commands, `cli`/`json_cli` format). Adding new encoder config writes must use `hwcam_be_format_cli_set()` rather than hardcoding `cli -s`.
 

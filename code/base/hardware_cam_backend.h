@@ -11,10 +11,11 @@
    file, reload mechanism and pre-start config tool differ.
 
    Detection:
-     1. If /boot/encoder exists, read one token (majestic|venc).
+     1. If /etc/ruby_encoder exists, read one token (majestic|venc).
      2. Else if /usr/bin/venc exists, waybeam.
      3. Else majestic.
-   Runs once; cached.
+   Runs once; cached. (/etc is persistent on OpenIPC overlay; /boot
+   does not exist on SSC338Q-style flash layouts.)
 */
 
 typedef enum

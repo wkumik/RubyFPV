@@ -6,11 +6,13 @@
 
 static t_hwcam_backend s_Backend = HWCAM_BE_UNKNOWN;
 
+#define HWCAM_BE_OVERRIDE_FILE "/etc/ruby_encoder"
+
 static t_hwcam_backend _read_override()
 {
-   if ( access("/boot/encoder", R_OK) != 0 )
+   if ( access(HWCAM_BE_OVERRIDE_FILE, R_OK) != 0 )
       return HWCAM_BE_UNKNOWN;
-   FILE* fp = fopen("/boot/encoder", "r");
+   FILE* fp = fopen(HWCAM_BE_OVERRIDE_FILE, "r");
    if ( NULL == fp )
       return HWCAM_BE_UNKNOWN;
    char sz[32] = {0};
@@ -38,7 +40,7 @@ t_hwcam_backend hwcam_be_detect()
    if ( ov != HWCAM_BE_UNKNOWN )
    {
       s_Backend = ov;
-      log_line("[HwCamBE] Backend from /boot/encoder: %s", hwcam_be_name());
+      log_line("[HwCamBE] Backend from %s: %s", HWCAM_BE_OVERRIDE_FILE, hwcam_be_name());
       return s_Backend;
    }
 
