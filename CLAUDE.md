@@ -153,6 +153,28 @@ code/
 
 **Reception:** pcap_create + promiscuous mode + pcap_dispatch.
 
+## Encoder Backend (OpenIPC)
+
+On OpenIPC builds Ruby can drive either encoder:
+- **majestic** — historical default, `/usr/bin/majestic` + `/etc/majestic.yaml`, `cli -s` / `killall -1` to reload
+- **waybeam** (OpenIPC/waybeam_venc v0.7+) — `/usr/bin/venc` + `/etc/venc.json`, `json_cli -s` / HTTP `/api/v1/restart` to reload. 1:1 RTP-compatible with majestic (same UDP:5600 ingest, camelCase `/api/v1/set?...` alias table). Extra features Ruby now uses: `/request/idr` on RTP-seq desync.
+
+Selection: runtime detection in `code/base/hardware_cam_backend.cpp`.
+- Override via `/boot/encoder` file containing `majestic` or `venc`.
+- Otherwise: waybeam if `/usr/bin/venc` is executable; else majestic.
+- Cached after first call; log line `[HwCamBE] Detected encoder backend: ...` on boot.
+
+All existing call sites go through `hwcam_be_*()` helpers (process name, config path, reload/kill commands, `cli`/`json_cli` format). Adding new encoder config writes must use `hwcam_be_format_cli_set()` rather than hardcoding `cli -s`.
+
+Per-backend field differences already handled:
+- `.isp.sensorConfig` (maj) vs `.isp.sensorBin` (wbm)
+- `.outgoing.naluSize` (maj) vs `.outgoing.maxPayloadSize` (wbm)
+- `.audio.srate` (maj) vs `.audio.sampleRate` (wbm)
+- `.fpv.enabled` is majestic-only (wbm uses `.fpv.roiEnabled` etc)
+- `.video0.sliceUnits`, `.watchdog.enabled`, `.rtsp.enabled` are majestic-only and skipped on wbm
+
+Not yet integrated (Phase 3+): ROI QP gradient, gyro EIS, sensor FPS unlock, waybeam IQ tuning API, live-resolution menu, unix-socket transport.
+
 ## Networking & SSH
 
 - **SSH credentials:** Pi: `pi/raspberry`, Radxa: `radxa/radxa`, OpenIPC: `root/12345`
