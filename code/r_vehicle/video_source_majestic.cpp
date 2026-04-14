@@ -951,14 +951,18 @@ bool video_source_majestic_periodic_health_checks()
       _video_source_majestic_check_cores_affinities_balance();
    }
 
-   // Check majestic process to be generating video data
+   // Check encoder process to be generating video data
+   // waybeam takes ~6-10s for first frame on cold boot (sensor unlock, ISP bin
+   // load, IQ params init, encoder thread spawn) — much longer than majestic.
+   // Use a backend-aware post-start grace period so we don't false-alarm.
+   const u32 uPostStartGraceMs = (hwcam_be_get() == HWCAM_BE_WAYBEAM) ? 12000 : 2000;
    if ( s_iCountMajestigProcessNotRunningChecks >= 0 )
    if ( g_TimeNow > g_TimeStart + 10000 )
    if ( g_TimeNow > s_uTimeLastMajesticRecvData + 5000 )
-   if ( (s_uTimeMajesticStarted != 0) && (g_TimeNow > s_uTimeMajesticStarted+2000))
+   if ( (s_uTimeMajesticStarted != 0) && (g_TimeNow > s_uTimeMajesticStarted + uPostStartGraceMs))
    if ( g_TimeNow > hardware_camera_maj_get_last_change_time() + 5000 )
    {
-      log_softerror_and_alarm("[VideoSourceMaj] majestic is not generating any video stream. Restart it.");
+      log_softerror_and_alarm("[VideoSourceMaj] %s is not generating any video stream. Restart it.", hwcam_be_name());
       
       signal_start_long_op();
       video_source_majestic_stop_program();
