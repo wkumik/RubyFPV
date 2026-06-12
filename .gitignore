@@ -1,0 +1,30 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.d
+
+# Built binaries (Ruby executables, no extension)
+/ruby_rt_vehicle
+/ruby_rt_station
+/ruby_central
+/ruby_player_radxa
+/ruby_controller
+/ruby_start
+/ruby_tx_telemetry
+/ruby_rx_telemetry
+/ruby_update
+/ruby_update_worker
+/ruby_i2c
+/ruby_logger
+/ruby_player_p
+
+# Onboard / test recordings
+*.ts
+*.h264
+*.h265
+*.thumb.jpg
+
+# Local helper scripts and agent notes (not for upstream PRs)
+/build_vehicle_wsl.sh
+/CLAUDE.md
