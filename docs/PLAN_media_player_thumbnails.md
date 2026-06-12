@@ -141,3 +141,50 @@ and `menu_storage.cpp` — none of which the AP patch modified — so the eventu
 implementation branch should be **rebased/cut from a clean base** (`71aea0d` or
 upstream) excluding `32fc208`. Keep `.o` build artifacts out of the diff (known
 repo-hygiene issue).
+
+---
+
+## Part 3 — OTA download of onboard recordings + remux to .mp4
+
+**Motivation (user, 2026-06-12):** waybeam onboard recording writes HEVC `.ts`
+to the drone SD (`/mnt/mmcblk0p1/ruby/`). The user wants to pull those clips to
+the GS over the air and have them playable/shareable as `.mp4`, browsable in the
+same DJI-style thumbnail grid as Part 2.
+
+### What already exists
+- GS↔vehicle **segmented file transfer** is already implemented:
+  `COMMAND_ID_DOWNLOAD_FILE` / `COMMAND_ID_DOWNLOAD_FILE_SEGMENT` in
+  `r_central/handle_commands.cpp` (file-id based, segment ack/retry loop). This
+  is the transport to reuse — do NOT invent a new one.
+- Onboard recordings land in a known dir on the drone SD with a matching `.osd`
+  telemetry sidecar (written by `rx_osd_recording_vehicle.*`, shipped in the
+  waybeam-integration PR #78).
+
+### Gaps to build
+1. **List recordings (new command).** A `COMMAND_ID_LIST_ONBOARD_RECORDINGS`
+   (vehicle → GS) returning {filename, size, duration, has-osd} for each `.ts`
+   under the recordings dir. Without this the GS has no file-id to download.
+2. **Map recording → downloadable file-id.** Wire the listed files into the
+   existing `s_*FileToDownload*` machinery so the segmented transfer can fetch
+   an arbitrary recording by path, not just the current hardcoded targets.
+3. **GS-side import UI.** In the recordings/media browser: per-clip
+   "Download from drone" action → progress (reuse the existing
+   "Downloading NN%" popup) → file saved into the GS media folder so Part 2's
+   thumbnail grid picks it up.
+4. **Remux .ts → .mp4 (container only, no transcode).** waybeam writes HEVC in
+   an MPEG-TS container; `.ts → .mp4` is a pure remux:
+   `ffmpeg -i in.ts -c copy out.mp4`. **Verify ffmpeg is present on the Radxa
+   GS** (`which ffmpeg`); if not, either ship it or keep `.ts` and rely on the
+   player demuxing TS directly (Part 1 already needs HEVC playback). Remux on
+   import, keep the `.osd` sidecar alongside the `.mp4`.
+
+### Sequencing / dependency
+- Depends on **Part 1** (HEVC playback) being done first — no point importing
+  HEVC clips the player can't play.
+- The list/download commands are vehicle-side, so this part needs a coordinated
+  GS+vehicle build (see [[feedback_match_gs_drone_protocol]]).
+
+### Open questions
+- Download over the FPV link competes with live video bandwidth — gate downloads
+  to when disarmed / not streaming, or throttle? (DJI does it on the ground.)
+- Delete-after-download option, or leave clips on the drone SD?
