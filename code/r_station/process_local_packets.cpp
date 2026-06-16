@@ -68,6 +68,7 @@
 #include "adaptive_video.h"
 #include "radio_links_sik.h"
 #include "test_link_params.h"
+#include "rf_scan.h"
 
 
 bool _switch_to_vehicle_radio_link(int iVehicleRadioLinkId)
@@ -879,6 +880,14 @@ void process_local_control_packet(u8* pPacketBuffer)
          radio_rx_resume_interface(i);
       log_line("Resumed radio rx interfaces.");
       radio_stats_reset_interfaces_rx_info(&g_SM_RadioStats, "Changed search frequency");
+      return;
+   }
+
+   if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_START )
+   {
+      u32 uBandFlags = pPH->vehicle_id_dest;
+      log_line("RFScan: received start request for band flags %u.", uBandFlags);
+      rf_scan_start(uBandFlags, g_fIPCToCentral);
       return;
    }
 

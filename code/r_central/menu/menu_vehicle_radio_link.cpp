@@ -37,6 +37,9 @@
 #include "menu_item_text.h"
 #include "menu_tx_raw_power.h"
 #include "menu_confirmation.h"
+#include "menu_rf_scan.h"
+#include "../../base/config_radio.h"
+#include "../../base/hardware_radio.h"
 #include "../../common/models_connect_frequencies.h"
 #include "../launchers_controller.h"
 #include "../link_watch.h"
@@ -141,7 +144,8 @@ void MenuVehicleRadioLink::addMenuItems()
    m_IndexLDPC = -1;
    m_IndexSGI = -1;
    m_IndexSTBC = -1;
-   m_IndexReset = -1; 
+   m_IndexReset    = -1;
+   m_IndexScanFreq = -1;
 
    log_line("MenuVehicleRadioLink: Add items: radio data rates for link %d: vid: %d, data-down: %d, data-up: %d",
       m_iVehicleRadioLink+1, g_pCurrentModel->radioLinksParams.downlink_datarate_video_bps[m_iVehicleRadioLink],
@@ -158,6 +162,14 @@ void MenuVehicleRadioLink::addMenuItems()
       sprintf(szBuff, "Vehicle radio interface used for this radio link: %s", str_get_radio_card_model_string(g_pCurrentModel->radioInterfacesParams.interface_card_model[m_iVehicleRadioInterface]));
    addMenuItem(new MenuItemText(szBuff, false, 0.0));
    addMenuItemFrequencies();
+
+   // Add scan option for WiFi bands only (not serial radios / SiK)
+   u32 uCurFreq = g_pCurrentModel->radioLinksParams.link_frequency_khz[m_iVehicleRadioLink];
+   int iBand = getBand(uCurFreq);
+   if ( iBand == RADIO_HW_SUPPORTED_BAND_24 || iBand == RADIO_HW_SUPPORTED_BAND_23 ||
+        iBand == RADIO_HW_SUPPORTED_BAND_25 || iBand == RADIO_HW_SUPPORTED_BAND_58 )
+      m_IndexScanFreq = addMenuItem(new MenuItem("Scan for Clean Channel", "Scan all channels in the current band and find the one with the lowest interference."));
+
    addMenuItemsCapabilities();
    
    addMenuItemsDataRates();
@@ -1126,6 +1138,20 @@ void MenuVehicleRadioLink::onReturnFromChild(int iChildMenuId, int returnValue)
       sendRadioLinkConfigParams(&m_RadioLinksParamsToApply, false);
       return;
    }
+
+   if ( MENU_ID_RF_SCAN == iChildMenuId/1000 )
+   {
+      if ( 1 == returnValue )
+      {
+         u32 uBestFreq = menu_rf_scan_get_best_freq_khz();
+         if ( uBestFreq > 0 )
+         {
+            log_line("MenuVehicleRadioLink: applying RF scan recommended frequency %s", str_format_frequency(uBestFreq));
+            sendNewRadioLinkFrequency(m_iVehicleRadioLink, uBestFreq);
+         }
+      }
+      return;
+   }
 }
 
 int MenuVehicleRadioLink::onBack()
@@ -1149,6 +1175,13 @@ void MenuVehicleRadioLink::onSelectItem()
    {
       handle_commands_show_popup_progress();
       addMenuItems();
+      return;
+   }
+
+   if ( m_SelectedIndex == m_IndexScanFreq )
+   {
+      u32 uFreq = g_pCurrentModel->radioLinksParams.link_frequency_khz[m_iVehicleRadioLink];
+      add_menu_to_stack(new MenuRFScan(m_iVehicleRadioLink, uFreq));
       return;
    }
 

@@ -55,6 +55,7 @@
 #include "adaptive_video.h"
 #include "test_link_params.h"
 #include "packets_utils.h"
+#include "rf_scan.h"
 #include "rx_video_output.h"
 #include "processor_rx_audio.h"
 
@@ -566,6 +567,8 @@ void _check_retransmissions_state()
 
 void router_periodic_loop()
 {
+   rf_scan_periodic_loop();
+
    radio_links_check_reinit_sik_interfaces();
 
    if ( test_link_is_in_progress() )

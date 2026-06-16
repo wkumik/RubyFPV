@@ -55,6 +55,7 @@ class MenuVehicleRadioLink: public Menu
       int m_IndexSGI;
       int m_IndexSTBC;
       int m_IndexReset;
+      int m_IndexScanFreq;
 
       bool m_bWaitingConfirmationFromUser;
       bool m_bWaitingVideoChangeConfirmationFromVehicle;
