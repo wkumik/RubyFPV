@@ -70,3 +70,6 @@
 #define PACKET_TYPE_LOCAL_CONTROL_VEHICLE_SEND_MODEL_SETTINGS 222
 
 #define PACKET_TYPE_APPLY_SIK_PARAMS 230
+
+#define PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_START 231  // vehicle_id_dest: band flag (RADIO_HW_SUPPORTED_BAND_*)
+#define PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_STOP 232   // abort an in-progress scan and restore the radio links
