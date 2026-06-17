@@ -56,8 +56,10 @@ MenuRFScan::MenuRFScan(int iVehicleRadioLink, u32 uFreqKhz)
    m_iBestChannelIndex   = -1;
    m_bScanInProgress     = false;
    m_bScanComplete       = false;
+   m_bNoSurveyData       = false;
 
-   memset(m_iNoiseDbm, 0, sizeof(m_iNoiseDbm));
+   for ( int i = 0; i < RF_SCAN_MAX_CHANNELS; i++ )
+      m_iBusyPct[i] = RF_SCAN_BUSY_NOT_SCANNED;
 
    // Build channel list for this band
    u32* pChannels = NULL;
@@ -75,10 +77,7 @@ MenuRFScan::MenuRFScan(int iVehicleRadioLink, u32 uFreqKhz)
       if ( nCount > RF_SCAN_MAX_CHANNELS )
          nCount = RF_SCAN_MAX_CHANNELS;
       for ( int i = 0; i < nCount; i++ )
-      {
          m_uScanChannels[i] = pChannels[i];
-         m_iNoiseDbm[i]     = -999;
-      }
       m_iScanChannelsCount = nCount;
    }
 
@@ -86,7 +85,7 @@ MenuRFScan::MenuRFScan(int iVehicleRadioLink, u32 uFreqKhz)
    float height_text = g_pRenderEngine->textHeight(g_idFontMenu);
    addExtraHeightAtEnd(height_text * 12.0f);
 
-   m_IndexRescan         = addMenuItem(new MenuItem("Start Scan", "Scan all channels in this band and measure noise floor."));
+   m_IndexRescan         = addMenuItem(new MenuItem("Start Scan", "Scan all channels in this band and measure how busy each one is. This interrupts the radio link (video, telemetry and RC) for the duration of the scan."));
    m_IndexUseRecommended = addMenuItem(new MenuItem("Use Recommended Channel", "Apply the cleanest channel to this radio link."));
    m_IndexCancel         = addMenuItem(new MenuItem("Cancel", "Close without changing the frequency."));
 
@@ -101,7 +100,7 @@ MenuRFScan::MenuRFScan(int iVehicleRadioLink, u32 uFreqKhz)
    else if ( m_uBandFlags == RADIO_HW_SUPPORTED_BAND_433 ) szBand = "433 MHz";
    else if ( m_uBandFlags == RADIO_HW_SUPPORTED_BAND_868 ) szBand = "868 MHz";
    else if ( m_uBandFlags == RADIO_HW_SUPPORTED_BAND_915 ) szBand = "915 MHz";
-   snprintf(szTitle, sizeof(szTitle), "RF Spectrum Scan — %s — %d channels", szBand, m_iScanChannelsCount);
+   snprintf(szTitle, sizeof(szTitle), "RF Spectrum Scan - %s - %d channels", szBand, m_iScanChannelsCount);
    setTitle(szTitle);
 
    s_pLastRFScanMenu = this;
@@ -109,6 +108,10 @@ MenuRFScan::MenuRFScan(int iVehicleRadioLink, u32 uFreqKhz)
 
 MenuRFScan::~MenuRFScan()
 {
+   // Safety net: if the menu is destroyed while a scan is running, tell the
+   // router to abort and restore the radio links.
+   if ( m_bScanInProgress )
+      _stopScan();
    if ( s_pLastRFScanMenu == this )
       s_pLastRFScanMenu = NULL;
 }
@@ -116,24 +119,34 @@ MenuRFScan::~MenuRFScan()
 void MenuRFScan::onShow()
 {
    Menu::onShow();
-   _startScan();
+   // Do NOT auto-start the scan: scanning drops the link to the vehicle
+   // (video + telemetry + RC) for several seconds. The user must explicitly
+   // press "Start Scan".
 }
 
 void MenuRFScan::_startScan()
 {
    for ( int i = 0; i < m_iScanChannelsCount; i++ )
-      m_iNoiseDbm[i] = -999;
+      m_iBusyPct[i] = RF_SCAN_BUSY_NOT_SCANNED;
    m_iChannelsScanned  = 0;
    m_uBestFreqKhz      = 0;
    m_iBestChannelIndex = -1;
    m_bScanInProgress   = true;
    m_bScanComplete     = false;
+   m_bNoSurveyData     = false;
 
    enableMenuItem(m_IndexUseRecommended, false);
    m_pMenuItems[m_IndexUseRecommended]->setTitle("Use Recommended Channel");
 
    send_control_message_to_router(PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_START, (u32)m_uBandFlags);
    log_line("MenuRFScan: sent scan start for band flags %d, %d channels.", m_uBandFlags, m_iScanChannelsCount);
+}
+
+void MenuRFScan::_stopScan()
+{
+   m_bScanInProgress = false;
+   send_control_message_to_router(PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_STOP, 0);
+   log_line("MenuRFScan: sent scan stop.");
 }
 
 bool MenuRFScan::periodicLoop()
@@ -150,14 +163,14 @@ void MenuRFScan::_readResultsFile()
       return;
 
    u32 uFreqKhz = 0;
-   int iNoise   = 0;
-   while ( fscanf(f, "%u %d", &uFreqKhz, &iNoise) == 2 )
+   int iBusy    = 0;
+   while ( fscanf(f, "%u %d", &uFreqKhz, &iBusy) == 2 )
    {
       for ( int i = 0; i < m_iScanChannelsCount; i++ )
       {
          if ( m_uScanChannels[i] == uFreqKhz )
          {
-            m_iNoiseDbm[i] = iNoise;
+            m_iBusyPct[i] = iBusy;
             break;
          }
       }
@@ -166,7 +179,7 @@ void MenuRFScan::_readResultsFile()
 
    m_iChannelsScanned = 0;
    for ( int i = 0; i < m_iScanChannelsCount; i++ )
-      if ( m_iNoiseDbm[i] != -999 )
+      if ( m_iBusyPct[i] != RF_SCAN_BUSY_NOT_SCANNED )
          m_iChannelsScanned++;
 
    if ( m_iChannelsScanned >= m_iScanChannelsCount && m_iScanChannelsCount > 0 )
@@ -174,14 +187,14 @@ void MenuRFScan::_readResultsFile()
       m_bScanInProgress = false;
       m_bScanComplete   = true;
 
-      int bestNoise = 0;
+      int bestBusy = 0;
       for ( int i = 0; i < m_iScanChannelsCount; i++ )
       {
-         if ( m_iNoiseDbm[i] == -999 )
+         if ( m_iBusyPct[i] < 0 ) // not scanned or no usable survey data
             continue;
-         if ( m_iBestChannelIndex < 0 || m_iNoiseDbm[i] < bestNoise )
+         if ( m_iBestChannelIndex < 0 || m_iBusyPct[i] < bestBusy )
          {
-            bestNoise           = m_iNoiseDbm[i];
+            bestBusy            = m_iBusyPct[i];
             m_iBestChannelIndex = i;
             m_uBestFreqKhz      = m_uScanChannels[i];
          }
@@ -193,6 +206,11 @@ void MenuRFScan::_readResultsFile()
          char szLabel[128];
          snprintf(szLabel, sizeof(szLabel), "Use Recommended: %s", str_format_frequency(m_uBestFreqKhz));
          m_pMenuItems[m_IndexUseRecommended]->setTitle(szLabel);
+      }
+      else
+      {
+         // The radio card did not report channel-survey data for any channel.
+         m_bNoSurveyData = true;
       }
    }
 }
@@ -211,6 +229,8 @@ void MenuRFScan::Render()
    char szStatus[256];
    if ( m_bScanInProgress )
       snprintf(szStatus, sizeof(szStatus), "Scanning...  %d / %d channels", m_iChannelsScanned, m_iScanChannelsCount);
+   else if ( m_bNoSurveyData )
+      snprintf(szStatus, sizeof(szStatus), "Scan complete, but this radio card does not report channel survey data. No recommendation available.");
    else if ( m_bScanComplete )
       snprintf(szStatus, sizeof(szStatus), "Scan complete  |  %d channels  |  Cleanest: %s",
                m_iScanChannelsCount, m_uBestFreqKhz ? str_format_frequency(m_uBestFreqKhz) : "N/A");
@@ -240,31 +260,29 @@ void MenuRFScan::_renderSpectrumChart(float xPos, float yPos, float fWidth, floa
    float hTs = g_pRenderEngine->textHeight(g_idFontMenuSmall);
 
    // Reserve left margin for Y-axis labels and bottom for freq labels
-   float fLabelW = g_pRenderEngine->textWidth(g_idFontMenuSmall, "-100");
+   float fLabelW = g_pRenderEngine->textWidth(g_idFontMenuSmall, "100%");
    float fGrX    = xPos + fLabelW + wPx * 4;
    float fGrW    = fWidth - fLabelW - wPx * 4;
    float fGrY    = yPos;
    float fGrH    = fHeight - hTs * 1.6f;
    float fGrB    = fGrY + fGrH;
 
-   // Y range: -50 (top) to -100 (bottom)  — lower = quieter = better
-   const float kNoiseTop = -50.0f;
-   const float kNoiseBt  = -100.0f;
+   // Y range: channel busy ratio, 0% (bottom, clean) to 100% (top, congested).
+   // Shorter bar = less busy = cleaner channel.
 
    // Grid lines + Y labels
-   int yTicks[] = { -50, -60, -70, -80, -90, -100 };
+   int yTicks[] = { 100, 80, 60, 40, 20, 0 };
    for ( int t = 0; t < 6; t++ )
    {
-      float dbm  = (float)yTicks[t];
-      float frac = (dbm - kNoiseTop) / (kNoiseBt - kNoiseTop);
-      float gy   = fGrY + frac * fGrH;
+      float frac = (float)yTicks[t] / 100.0f;
+      float gy   = fGrB - frac * fGrH;
 
       g_pRenderEngine->setStroke(0.22f, 0.25f, 0.35f, 1.0f);
       g_pRenderEngine->setStrokeSize(1);
       g_pRenderEngine->drawLine(fGrX, gy, fGrX + fGrW, gy);
 
       char szLbl[16];
-      snprintf(szLbl, sizeof(szLbl), "%d", yTicks[t]);
+      snprintf(szLbl, sizeof(szLbl), "%d%%", yTicks[t]);
       g_pRenderEngine->setColors(get_Color_MenuItemDisabledText());
       g_pRenderEngine->drawTextLeft(fGrX - wPx * 3, gy - hTs * 0.5f, g_idFontMenuSmall, szLbl);
    }
@@ -286,7 +304,7 @@ void MenuRFScan::_renderSpectrumChart(float xPos, float yPos, float fWidth, floa
       float bx1 = fGrX + (i + 1) * barW - gap;
       float bw  = bx1 - bx0;
 
-      if ( m_iNoiseDbm[i] == -999 )
+      if ( m_iBusyPct[i] == RF_SCAN_BUSY_NOT_SCANNED )
       {
          // Not yet scanned: dim outline
          g_pRenderEngine->setFill(0, 0, 0, 0);
@@ -296,16 +314,26 @@ void MenuRFScan::_renderSpectrumChart(float xPos, float yPos, float fWidth, floa
          continue;
       }
 
-      float frac   = ((float)m_iNoiseDbm[i] - kNoiseTop) / (kNoiseBt - kNoiseTop);
+      if ( m_iBusyPct[i] == RF_SCAN_BUSY_INVALID )
+      {
+         // Measured, but no usable survey data for this channel: greyed outline.
+         g_pRenderEngine->setFill(0.20f, 0.20f, 0.22f, 0.35f);
+         g_pRenderEngine->setStroke(0.30f, 0.30f, 0.34f, 0.7f);
+         g_pRenderEngine->setStrokeSize(1);
+         g_pRenderEngine->drawRect(bx0, fGrY, bw, fGrH);
+         continue;
+      }
+
+      float frac   = (float)m_iBusyPct[i] / 100.0f;
       if ( frac < 0.0f ) frac = 0.0f;
       if ( frac > 1.0f ) frac = 1.0f;
-      float barTop = fGrY + frac * fGrH;
+      float barTop = fGrB - frac * fGrH;
 
-      // Colour by noise level (spectrum style: shorter/lower bar = cleaner)
+      // Colour by busy ratio (spectrum style: shorter/lower bar = cleaner)
       float cr, cg, cb;
-      if      ( m_iNoiseDbm[i] <= -88 ) { cr = 0.20f; cg = 0.78f; cb = 0.38f; }  // green
-      else if ( m_iNoiseDbm[i] <= -76 ) { cr = 0.94f; cg = 0.75f; cb = 0.18f; }  // yellow
-      else                               { cr = 0.85f; cg = 0.25f; cb = 0.22f; }  // red
+      if      ( m_iBusyPct[i] < 20 ) { cr = 0.20f; cg = 0.78f; cb = 0.38f; }  // green
+      else if ( m_iBusyPct[i] < 50 ) { cr = 0.94f; cg = 0.75f; cb = 0.18f; }  // yellow
+      else                           { cr = 0.85f; cg = 0.25f; cb = 0.22f; }  // red
 
       // Highlight best channel
       if ( i == m_iBestChannelIndex )
@@ -339,7 +367,7 @@ void MenuRFScan::_renderSpectrumChart(float xPos, float yPos, float fWidth, floa
       {
          char szLn1[32], szLn2[32];
          snprintf(szLn1, sizeof(szLn1), "%u MHz", m_uScanChannels[i] / 1000);
-         snprintf(szLn2, sizeof(szLn2), "%d dBm", m_iNoiseDbm[i]);
+         snprintf(szLn2, sizeof(szLn2), "%d%% busy", m_iBusyPct[i]);
 
          float tw1  = g_pRenderEngine->textWidth(g_idFontMenu, szLn1);
          float tw2  = g_pRenderEngine->textWidth(g_idFontMenuSmall, szLn2);
@@ -406,15 +434,26 @@ void MenuRFScan::onSelectItem()
    {
       if ( m_uBestFreqKhz == 0 )
          return;
+      if ( m_bScanInProgress )
+         _stopScan();
       menu_stack_pop(1);
       return;
    }
 
    if ( m_SelectedIndex == m_IndexCancel )
    {
+      if ( m_bScanInProgress )
+         _stopScan();
       menu_stack_pop(0);
       return;
    }
+}
+
+int MenuRFScan::onBack()
+{
+   if ( m_bScanInProgress )
+      _stopScan();
+   return Menu::onBack();
 }
 
 u32 menu_rf_scan_get_best_freq_khz()

@@ -40,7 +40,6 @@
 #include "../base/hardware.h"
 #include "../base/hardware_radio.h"
 #include "../base/hardware_procs.h"
-#include "../base/ruby_ipc.h"
 #include "../radio/radiopackets2.h"
 #include "../radio/radio_rx.h"
 #include "shared_vars.h"
@@ -52,17 +51,25 @@
 #define RF_SCAN_DWELL_MS     280
 #define RF_SCAN_RESULTS_FILE "/tmp/ruby_rf_scan_results.txt"
 
+// Channel busy ratio in percent (0..100). Lower = cleaner channel.
+// Written to the results file as the per-channel metric. A negative value
+// means the radio card did not report usable survey data for that channel.
+#define RF_SCAN_BUSY_INVALID (-1)
+
 static bool  s_bRFScanInProgress = false;
 static u32   s_uRFScanChannels[RF_SCAN_MAX_CHANNELS];
 static int   s_iRFScanChannelsCount = 0;
 static int   s_iRFScanCurrentChannel = 0;
 static u32   s_uRFScanDwellStartTime = 0;
-static int   s_iFDToCentral = -1;
 static FILE* s_pRFScanFile = NULL;
 static u32   s_uRFScanBestFreqKhz = 0;
-static int   s_iRFScanBestNoise = 0;
+static int   s_iRFScanBestBusyPct = 0;
 
-static int _rf_scan_read_noise_dbm(u32 uFreqKhz)
+// Reads the channel busy ratio (in percent) for the currently-tuned channel
+// from "iw dev <iface> survey dump". Returns RF_SCAN_BUSY_INVALID when the
+// driver does not expose survey data (many monitor-mode RTL drivers do not),
+// so the caller can surface "not supported" instead of fabricating a value.
+static int _rf_scan_read_busy_pct(u32 uFreqKhz)
 {
    char szIfaceName[64];
    szIfaceName[0] = 0;
@@ -83,7 +90,7 @@ static int _rf_scan_read_noise_dbm(u32 uFreqKhz)
    }
 
    if ( szIfaceName[0] == 0 )
-      return -75;
+      return RF_SCAN_BUSY_INVALID;
 
    char szCmd[256];
    char szOut[8192];
@@ -94,6 +101,8 @@ static int _rf_scan_read_noise_dbm(u32 uFreqKhz)
    int freq_mhz = (int)(uFreqKhz / 1000);
    char* pLine = szOut;
    bool bFoundFreq = false;
+   long long llActive = -1;
+   long long llBusy   = -1;
 
    while ( *pLine )
    {
@@ -109,16 +118,19 @@ static int _rf_scan_read_noise_dbm(u32 uFreqKhz)
       }
       else
       {
-         int noiseDbm = 0;
-         if ( sscanf(pLine, " noise: %d dBm", &noiseDbm) == 1 )
+         // We are inside the survey block for the target frequency.
+         long long llVal = 0;
+         if ( sscanf(pLine, " channel active time: %lld ms", &llVal) == 1 )
+            llActive = llVal;
+         else if ( sscanf(pLine, " channel busy time: %lld ms", &llVal) == 1 )
+            llBusy = llVal;
+         // Reached the next survey block — stop.
+         else if ( strstr(pLine, "frequency:") )
          {
             if ( pNext )
                *pNext = '\n';
-            return noiseDbm;
-         }
-         // Hit next survey block — stop
-         if ( strstr(pLine, "frequency:") )
             break;
+         }
       }
 
       if ( pNext )
@@ -129,34 +141,26 @@ static int _rf_scan_read_noise_dbm(u32 uFreqKhz)
       else
          break;
    }
-   return -75;
+
+   if ( (llActive <= 0) || (llBusy < 0) )
+      return RF_SCAN_BUSY_INVALID;
+
+   long long llPct = (llBusy * 100) / llActive;
+   if ( llPct < 0 )   llPct = 0;
+   if ( llPct > 100 ) llPct = 100;
+   return (int)llPct;
 }
 
-static void _rf_scan_send_result_to_central()
-{
-   if ( s_iFDToCentral < 0 )
-      return;
-
-   t_packet_header PH;
-   radio_packet_init(&PH, PACKET_COMPONENT_LOCAL_CONTROL, PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_RESULT, STREAM_ID_DATA);
-   PH.vehicle_id_src  = 0;
-   PH.vehicle_id_dest = s_uRFScanBestFreqKhz;
-   PH.total_length    = sizeof(t_packet_header);
-   radio_packet_compute_crc((u8*)&PH, sizeof(t_packet_header));
-   ruby_ipc_channel_send_message(s_iFDToCentral, (u8*)&PH, sizeof(t_packet_header));
-}
-
-void rf_scan_start(u32 uBandFlags, int iFDToCentral)
+void rf_scan_start(u32 uBandFlags)
 {
    if ( s_bRFScanInProgress )
       rf_scan_stop();
 
-   s_iFDToCentral         = iFDToCentral;
    s_iRFScanChannelsCount = 0;
    s_iRFScanCurrentChannel = 0;
    s_uRFScanDwellStartTime = 0;
    s_uRFScanBestFreqKhz   = 0;
-   s_iRFScanBestNoise     = 0;
+   s_iRFScanBestBusyPct   = 0;
 
    u32* pChannels = NULL;
    int  nCount    = 0;
@@ -213,8 +217,10 @@ void rf_scan_periodic_loop()
          radio_rx_resume_interface(i);
 
       s_bRFScanInProgress = false;
-      log_line("RFScan: scan complete. Best channel: %u kHz (%d dBm).", s_uRFScanBestFreqKhz, s_iRFScanBestNoise);
-      _rf_scan_send_result_to_central();
+      if ( s_uRFScanBestFreqKhz != 0 )
+         log_line("RFScan: scan complete. Cleanest channel: %u kHz (%d%% busy).", s_uRFScanBestFreqKhz, s_iRFScanBestBusyPct);
+      else
+         log_line("RFScan: scan complete, but no usable survey data was reported by the radio card.");
       return;
    }
 
@@ -236,23 +242,26 @@ void rf_scan_periodic_loop()
    if ( g_TimeNow < s_uRFScanDwellStartTime + RF_SCAN_DWELL_MS )
       return;
 
-   // Step 3: read noise and record
-   int iNoise = _rf_scan_read_noise_dbm(uFreqKhz);
+   // Step 3: read channel busy ratio and record
+   int iBusyPct = _rf_scan_read_busy_pct(uFreqKhz);
 
    if ( s_pRFScanFile )
    {
-      fprintf(s_pRFScanFile, "%u %d\n", uFreqKhz, iNoise);
+      fprintf(s_pRFScanFile, "%u %d\n", uFreqKhz, iBusyPct);
       fflush(s_pRFScanFile);
    }
 
-   if ( s_uRFScanBestFreqKhz == 0 || iNoise < s_iRFScanBestNoise )
+   if ( iBusyPct >= 0 )
    {
-      s_iRFScanBestNoise   = iNoise;
-      s_uRFScanBestFreqKhz = uFreqKhz;
+      if ( s_uRFScanBestFreqKhz == 0 || iBusyPct < s_iRFScanBestBusyPct )
+      {
+         s_iRFScanBestBusyPct = iBusyPct;
+         s_uRFScanBestFreqKhz = uFreqKhz;
+      }
    }
 
-   log_line("RFScan: channel %d/%d  %u kHz  noise=%d dBm.",
-            s_iRFScanCurrentChannel + 1, s_iRFScanChannelsCount, uFreqKhz, iNoise);
+   log_line("RFScan: channel %d/%d  %u kHz  busy=%d%%.",
+            s_iRFScanCurrentChannel + 1, s_iRFScanChannelsCount, uFreqKhz, iBusyPct);
 
    s_iRFScanCurrentChannel++;
    s_uRFScanDwellStartTime = 0;
@@ -280,9 +289,4 @@ void rf_scan_stop()
 bool rf_scan_is_in_progress()
 {
    return s_bRFScanInProgress;
-}
-
-u32 rf_scan_get_best_freq_khz()
-{
-   return s_uRFScanBestFreqKhz;
 }

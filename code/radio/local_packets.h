@@ -72,4 +72,4 @@
 #define PACKET_TYPE_APPLY_SIK_PARAMS 230
 
 #define PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_START 231  // vehicle_id_dest: band flag (RADIO_HW_SUPPORTED_BAND_*)
-#define PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_RESULT 232 // vehicle_id_dest: best freq kHz (0 = scan failed)
+#define PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_STOP 232   // abort an in-progress scan and restore the radio links

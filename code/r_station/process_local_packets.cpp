@@ -887,7 +887,14 @@ void process_local_control_packet(u8* pPacketBuffer)
    {
       u32 uBandFlags = pPH->vehicle_id_dest;
       log_line("RFScan: received start request for band flags %u.", uBandFlags);
-      rf_scan_start(uBandFlags, g_fIPCToCentral);
+      rf_scan_start(uBandFlags);
+      return;
+   }
+
+   if ( pPH->packet_type == PACKET_TYPE_LOCAL_CONTROLLER_RF_SCAN_STOP )
+   {
+      log_line("RFScan: received stop request.");
+      rf_scan_stop();
       return;
    }
 

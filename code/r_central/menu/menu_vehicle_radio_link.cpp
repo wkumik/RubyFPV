@@ -1139,7 +1139,9 @@ void MenuVehicleRadioLink::onReturnFromChild(int iChildMenuId, int returnValue)
       return;
    }
 
-   if ( MENU_ID_RF_SCAN == iChildMenuId/1000 )
+   // MenuRFScan is created with m_MenuId = MENU_ID_RF_SCAN, so match the full id
+   // here (not iChildMenuId/1000, which is used for confirmation-style children).
+   if ( MENU_ID_RF_SCAN == iChildMenuId )
    {
       if ( 1 == returnValue )
       {
@@ -1180,6 +1182,16 @@ void MenuVehicleRadioLink::onSelectItem()
 
    if ( m_SelectedIndex == m_IndexScanFreq )
    {
+      // Safety: scanning hops the ground station across the whole band, which
+      // drops the link to the vehicle (video, telemetry AND RC control) for the
+      // duration of the scan. Refuse to start while the vehicle is armed.
+      t_structure_vehicle_info* pRTInfo = get_vehicle_runtime_info_for_vehicle_id(g_pCurrentModel->uVehicleId);
+      if ( (NULL != pRTInfo) && pRTInfo->bGotRubyTelemetryInfo && pRTInfo->bIsArmed )
+      {
+         add_menu_to_stack(new MenuConfirmation("Cannot Scan While Armed",
+            "The vehicle is armed. Scanning interrupts the radio link (video, telemetry and RC control) for several seconds. Disarm the vehicle before scanning for a clean channel.", 0, true));
+         return;
+      }
       u32 uFreq = g_pCurrentModel->radioLinksParams.link_frequency_khz[m_iVehicleRadioLink];
       add_menu_to_stack(new MenuRFScan(m_iVehicleRadioLink, uFreq));
       return;
