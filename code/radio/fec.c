@@ -367,6 +367,96 @@ slow_addmul1(gf *dst1, gf *src1, gf c, int sz)
 	GF_ADDMULC( *dst , *src );
 }
 
+/*
+ * NEON implementations of addmul1/mul1 for the ARM targets (Pi, Radxa,
+ * OpenIPC), processing 16 bytes per iteration instead of one.
+ * A GF(256) multiplication by a constant c is done as two 16-entry table
+ * lookups (vtbl): one on the low nibble of each source byte with the table
+ * c*0..c*15, one on the high nibble with the table c*0x00,c*0x10..c*0xF0,
+ * xor-ed together. The two 16-byte tables are built from gf_mul_table on
+ * each call; that cost is negligible against the per-byte work saved.
+ * Correctness against the scalar path is verified once in fec_init().
+ */
+#if defined(__aarch64__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#define FEC_HAVE_NEON 1
+#include <arm_neon.h>
+
+static int s_iFecNeonEnabled = 0;
+
+static inline uint8x16_t gf_neon_tbl16(uint8x16_t vTable, uint8x16_t vIndex)
+{
+#if defined(__aarch64__)
+    return vqtbl1q_u8(vTable, vIndex);
+#else
+    /* armv7 NEON has no single-instruction 16-byte table lookup */
+    uint8x8x2_t t;
+    t.val[0] = vget_low_u8(vTable);
+    t.val[1] = vget_high_u8(vTable);
+    return vcombine_u8(vtbl2_u8(t, vget_low_u8(vIndex)), vtbl2_u8(t, vget_high_u8(vIndex)));
+#endif
+}
+
+static inline void gf_neon_build_nibble_tables(gf c, uint8x16_t* pvTableLow, uint8x16_t* pvTableHigh)
+{
+    gf* pMulRow = &gf_mul_table[((int)c)<<8];
+    unsigned char uTableLow[16], uTableHigh[16];
+    int i;
+    for( i=0; i<16; i++ )
+    {
+       uTableLow[i] = pMulRow[i];
+       uTableHigh[i] = pMulRow[i<<4];
+    }
+    *pvTableLow = vld1q_u8(uTableLow);
+    *pvTableHigh = vld1q_u8(uTableHigh);
+}
+
+static void
+neon_addmul1(gf *dst1, gf *src1, gf c, int sz)
+{
+    uint8x16_t vTableLow, vTableHigh;
+    uint8x16_t vNibbleMask = vdupq_n_u8(0x0F);
+    gf *dst = dst1, *src = src1;
+    gf *pMulRow = &gf_mul_table[((int)c)<<8];
+    int i;
+    int iBlocks = sz >> 4;
+
+    gf_neon_build_nibble_tables(c, &vTableLow, &vTableHigh);
+
+    for( i=0; i<iBlocks; i++, dst+=16, src+=16 )
+    {
+       uint8x16_t vSrc = vld1q_u8(src);
+       uint8x16_t vProd = veorq_u8(gf_neon_tbl16(vTableLow, vandq_u8(vSrc, vNibbleMask)),
+                                   gf_neon_tbl16(vTableHigh, vshrq_n_u8(vSrc, 4)));
+       vst1q_u8(dst, veorq_u8(vld1q_u8(dst), vProd));
+    }
+    for( i=(iBlocks<<4); i<sz; i++, dst++, src++ )
+       *dst ^= pMulRow[*src];
+}
+
+static void
+neon_mul1(gf *dst1, gf *src1, gf c, int sz)
+{
+    uint8x16_t vTableLow, vTableHigh;
+    uint8x16_t vNibbleMask = vdupq_n_u8(0x0F);
+    gf *dst = dst1, *src = src1;
+    gf *pMulRow = &gf_mul_table[((int)c)<<8];
+    int i;
+    int iBlocks = sz >> 4;
+
+    gf_neon_build_nibble_tables(c, &vTableLow, &vTableHigh);
+
+    for( i=0; i<iBlocks; i++, dst+=16, src+=16 )
+    {
+       uint8x16_t vSrc = vld1q_u8(src);
+       uint8x16_t vProd = veorq_u8(gf_neon_tbl16(vTableLow, vandq_u8(vSrc, vNibbleMask)),
+                                   gf_neon_tbl16(vTableHigh, vshrq_n_u8(vSrc, 4)));
+       vst1q_u8(dst, vProd);
+    }
+    for( i=(iBlocks<<4); i<sz; i++, dst++, src++ )
+       *dst = pMulRow[*src];
+}
+#endif /* FEC_HAVE_NEON */
+
 #if defined i386 && defined USE_ASSEMBLER
 
 #define LOOPSIZE 8
@@ -437,7 +527,14 @@ addmul1(gf *dst1, gf *src1, gf c, int sz)
 
 static void addmul(gf *dst, gf *src, gf c, int sz) {
     // fprintf(stderr, "Dst=%p Src=%p, gf=%02x sz=%d\n", dst, src, c, sz);
-    if (c != 0) addmul1(dst, src, c, sz);
+    if (c == 0) return;
+#ifdef FEC_HAVE_NEON
+    if (s_iFecNeonEnabled) {
+	neon_addmul1(dst, src, c, sz);
+	return;
+    }
+#endif
+    addmul1(dst, src, c, sz);
 }
 
 /*
@@ -563,7 +660,17 @@ mul1(gf *dst1, gf *src1, gf c, int sz)
 
 static inline void mul(gf *dst, gf *src, gf c, int sz) {
     /*fprintf(stderr, "%p = %02x * %p\n", dst, c, src);*/
-    if (c != 0) mul1(dst, src, c, sz); else memset(dst, 0, sz);
+    if (c == 0) {
+	memset(dst, 0, sz);
+	return;
+    }
+#ifdef FEC_HAVE_NEON
+    if (s_iFecNeonEnabled) {
+	neon_mul1(dst, src, c, sz);
+	return;
+    }
+#endif
+    mul1(dst, src, c, sz);
 }
 
 /*
@@ -696,6 +803,45 @@ invert_mat(gf *src, int k)
 
 static int fec_initialized = 0;
 
+#ifdef FEC_HAVE_NEON
+/*
+ * One-time check that the NEON kernels produce the exact same output as
+ * the scalar reference; enables the NEON path only on success. Uses an
+ * odd buffer size so the non-vector tail loops are exercised too.
+ */
+static void fec_neon_self_test(void)
+{
+    static const gf aTestConstants[] = { 1, 2, 3, 0x1D, 0x53, 0x8E, 0xFF };
+    gf bufSrc[277], bufScalar[277], bufNeon[277];
+    unsigned int i, j;
+    unsigned int uSeed = 0x12345678;
+
+    s_iFecNeonEnabled = 1;
+    for( j=0; j<sizeof(aTestConstants)/sizeof(aTestConstants[0]); j++ )
+    {
+	gf c = aTestConstants[j];
+	for( i=0; i<sizeof(bufSrc); i++ )
+	{
+	    uSeed = uSeed * 1103515245 + 12345;
+	    bufSrc[i] = (gf)(uSeed >> 16);
+	    uSeed = uSeed * 1103515245 + 12345;
+	    bufScalar[i] = bufNeon[i] = (gf)(uSeed >> 16);
+	}
+	slow_addmul1(bufScalar, bufSrc, c, sizeof(bufSrc));
+	neon_addmul1(bufNeon, bufSrc, c, sizeof(bufSrc));
+	if ( 0 != memcmp(bufScalar, bufNeon, sizeof(bufScalar)) )
+	    s_iFecNeonEnabled = 0;
+
+	slow_mul1(bufScalar, bufSrc, c, sizeof(bufSrc));
+	neon_mul1(bufNeon, bufSrc, c, sizeof(bufSrc));
+	if ( 0 != memcmp(bufScalar, bufNeon, sizeof(bufScalar)) )
+	    s_iFecNeonEnabled = 0;
+    }
+    if ( 0 == s_iFecNeonEnabled )
+	fprintf(stderr, "fec: NEON GF kernels failed self test, using scalar path\n");
+}
+#endif /* FEC_HAVE_NEON */
+
 void fec_init(void)
 {
     TICK(ticks[0]);
@@ -706,6 +852,9 @@ void fec_init(void)
     init_mul_table();
     TOCK(ticks[0]);
     DDB(fprintf(stderr, "init_mul_table took %ldus\n", ticks[0]);)
+#ifdef FEC_HAVE_NEON
+    fec_neon_self_test();
+#endif
    	fec_initialized = 1 ;
 }
 
