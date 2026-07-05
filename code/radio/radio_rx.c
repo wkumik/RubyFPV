@@ -30,6 +30,11 @@
     SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// For sem_clockwait (glibc >= 2.30)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "../base/base.h"
 #include "../base/encr.h"
 #include "../base/config_hw.h"
@@ -40,6 +45,12 @@
 #include "radiolink.h"
 #include "radio_duplicate_det.h"
 #include <poll.h>
+
+// sem_clockwait lets the consumer block on the rx queues against CLOCK_MONOTONIC
+// (immune to wall clock jumps) instead of polling with sem_trywait + sleep
+#if defined(__GLIBC__) && ((__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ >= 30)))
+#define RADIO_RX_USE_SEM_CLOCKWAIT 1
+#endif
 
 
 int s_iRadioRxInitialized = 0;
@@ -266,33 +277,30 @@ void _radio_rx_update_fd_sets()
 u8* _radio_rx_wait_get_queue_packet(t_radio_rx_state_packets_queue* pQueue, int iHighPriorityQueue, u32 uTimeoutMicroSec, int* pLength, int* pIsShortPacket, int* pRadioInterfaceIndex)
 {
    int iRes = -1;
-   /*
-   if ( 0 == uTimeoutMicroSec )
-      iRes = sem_trywait(pQueue->pSemaphoreRead);
-   else
+   iRes = sem_trywait(pQueue->pSemaphoreRead);
+   if ( (0 != iRes) && (0 != uTimeoutMicroSec) )
    {
+#ifdef RADIO_RX_USE_SEM_CLOCKWAIT
+      // Block until a packet is posted or the timeout expires. Waking up on
+      // sem_post directly (instead of finishing a fixed sleep first) reduces
+      // the packet handoff latency from rx thread to consumer.
       struct timespec ts;
-      clock_gettime(CLOCK_REALTIME, &ts);
-      ts.tv_nsec += 1000LL*(long long)uTimeoutMicroSec*1000LL;
-      if ( ts.tv_nsec >= 1000000000LL )
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+      ts.tv_nsec += (long)uTimeoutMicroSec * 1000L;
+      while ( ts.tv_nsec >= 1000000000L )
       {
          ts.tv_sec++;
          ts.tv_nsec -= 1000000000L;
       }
-      iRes = sem_timedwait(pQueue->pSemaphoreRead, &ts);
-   }
-   if ( 0 != iRes )
-   {
-      if ( errno != ETIMEDOUT )
-         log_softerror_and_alarm("[RadioRx] Failed to timewait on %s semaphore for %u micros. Error: %d, %d, %s", iHighPriorityQueue?"high prio":"reg prio", uTimeoutMicroSec, iRes, errno, strerror(errno));
-      return NULL;
-   }
-   */
-   iRes = sem_trywait(pQueue->pSemaphoreRead);
-   if ( (0 != iRes) && (0 != uTimeoutMicroSec) )
-   {
+      do
+      {
+         iRes = sem_clockwait(pQueue->pSemaphoreRead, CLOCK_MONOTONIC, &ts);
+      }
+      while ( (0 != iRes) && (EINTR == errno) );
+#else
       hardware_sleep_micros(200);
       iRes = sem_trywait(pQueue->pSemaphoreRead);
+#endif
    }
    if ( 0 != iRes )
       return NULL;
@@ -460,9 +468,16 @@ void _radio_rx_add_packet_to_rx_queue(u8* pPacket, int iLength, int iRadioInterf
    if ( uPacketFlags & PACKET_FLAGS_BIT_HIGH_PRIORITY )
       pQueue = &s_RadioRxState.queue_high_priority;
 
-   int iIndexToWriteTo = -1;
+   // Fill the slot before publishing it to the consumer: this thread is the
+   // only writer of iCurrentPacketIndexToWrite and the consumer never reads
+   // past it, so the slot data must be complete before the index advances
+   int iIndexToWriteTo = pQueue->iCurrentPacketIndexToWrite;
+   pQueue->uPacketsRxInterface[iIndexToWriteTo] = iRadioInterface;
+   pQueue->uPacketsAreShort[iIndexToWriteTo] = 0;
+   pQueue->iPacketsLengths[iIndexToWriteTo] = iLength;
+   memcpy(pQueue->pPacketsBuffers[iIndexToWriteTo], pPacket, iLength);
+
    pthread_mutex_lock(&pQueue->mutexLock);
-   iIndexToWriteTo = pQueue->iCurrentPacketIndexToWrite;
    // No more room? Discard oldest packet
    if ( ((pQueue->iCurrentPacketIndexToWrite+1) % pQueue->iQueueSize) == pQueue->iCurrentPacketIndexToConsume )
        pQueue->iCurrentPacketIndexToConsume = (pQueue->iCurrentPacketIndexToConsume+1) % pQueue->iQueueSize;
@@ -470,12 +485,6 @@ void _radio_rx_add_packet_to_rx_queue(u8* pPacket, int iLength, int iRadioInterf
    pQueue->iCurrentPacketIndexToWrite = (pQueue->iCurrentPacketIndexToWrite + 1) % pQueue->iQueueSize;
    pthread_mutex_unlock(&pQueue->mutexLock);
 
-   // Add the packet to the queue
-   pQueue->uPacketsRxInterface[iIndexToWriteTo] = iRadioInterface;
-   pQueue->uPacketsAreShort[iIndexToWriteTo] = 0;
-   pQueue->iPacketsLengths[iIndexToWriteTo] = iLength;
-   memcpy(pQueue->pPacketsBuffers[iIndexToWriteTo], pPacket, iLength);
-      
    if ( (NULL != pQueue->pSemaphoreWrite) && (0 != sem_post(pQueue->pSemaphoreWrite)) )
       log_softerror_and_alarm("Failed to set semaphore for packet ready.");
  
@@ -1090,6 +1099,7 @@ void * _thread_radio_rx(void *argument)
 
       iLoopParsedPackets = 0;
       struct pollfd fds[MAX_RADIO_INTERFACES];
+      int iPollIndexToInterfaceIndex[MAX_RADIO_INTERFACES];
       int iRadioInterfacesWherePaused[MAX_RADIO_INTERFACES];
       s_iRadioRxCountFDs = 0;
       for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )
@@ -1105,6 +1115,7 @@ void * _thread_radio_rx(void *argument)
          fds[s_iRadioRxCountFDs].fd = pRadioHWInfo->runtimeInterfaceInfoRx.selectable_fd;
          fds[s_iRadioRxCountFDs].revents = 0;
          fds[s_iRadioRxCountFDs].events = POLLIN;
+         iPollIndexToInterfaceIndex[s_iRadioRxCountFDs] = i;
          s_iRadioRxCountFDs++;
       }
 
@@ -1177,24 +1188,9 @@ void * _thread_radio_rx(void *argument)
             if ( 0 == (fds[iPollIndex].revents & POLLIN) )
                continue;
 
-            int iInterfaceIndex = -1;
-            for( int i=0; i<hardware_get_radio_interfaces_count(); i++ )
-            {
-               radio_hw_info_t* pRadioHWInfo = hardware_get_radio_info(i);
-               if ( (NULL == pRadioHWInfo) || (! pRadioHWInfo->openedForRead) )
-                  continue;
-               if ( s_RadioRxState.iRadioInterfacesBroken[i] )
-                  continue;
-               if ( iRadioInterfacesWherePaused[i] )
-                  continue;
-               if ( fds[iPollIndex].fd == pRadioHWInfo->runtimeInterfaceInfoRx.selectable_fd )
-               {
-                  iInterfaceIndex = i;
-                  break;
-               }
-            }
+            int iInterfaceIndex = iPollIndexToInterfaceIndex[iPollIndex];
 
-            if ( (iInterfaceIndex == -1) || (iInterfaceIndex >= MAX_RADIO_INTERFACES) )
+            if ( (iInterfaceIndex < 0) || (iInterfaceIndex >= MAX_RADIO_INTERFACES) )
                continue;
 
             radio_hw_info_t* pRadioHWInfo = hardware_get_radio_info(iInterfaceIndex);
