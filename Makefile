@@ -1,6 +1,6 @@
 # run: make all RUBY_BUILD_ENV=openipc/radxa/[empty](pi)
-_CFLAGS := $(CFLAGS) -Wall -Wno-stringop-truncation -Wno-format-truncation -O2 -fdata-sections -ffunction-sections
-_CPPFLAGS := $(CPPLAGS) -Wall -Wno-stringop-truncation -Wno-format-truncation -O2 -fdata-sections -ffunction-sections
+_CFLAGS := $(CFLAGS) -Wall -Wno-stringop-truncation -Wno-format-truncation -O2 -fdata-sections -ffunction-sections -MMD -MP
+_CPPFLAGS := $(CPPFLAGS) $(CXXFLAGS) -Wall -Wno-stringop-truncation -Wno-format-truncation -O2 -fdata-sections -ffunction-sections -MMD -MP
 
 FOLDER_BASE=code/base
 FOLDER_COMMON=code/common
@@ -144,13 +144,13 @@ $(FOLDER_CENTRAL_OSD)/%.o: $(FOLDER_CENTRAL_OSD)/%.cpp
 	$(CXX) $(_CPPFLAGS) $(INCLUDE_CENTRAL) -export-dynamic -c -o $@ $<
 
 $(FOLDER_CENTRAL_OLED)/%.o: $(FOLDER_CENTRAL_OLED)/%.c
-	cc $(_CFLAGS) -c -o $@ $<
+	$(CC) $(_CFLAGS) -c -o $@ $<
 
 $(FOLDER_CENTRAL_OLED)/%.o: $(FOLDER_CENTRAL_OLED)/%.cpp
 	$(CXX) $(_CPPFLAGS) $(INCLUDE_CENTRAL) -export-dynamic -c -o $@ $<
 
 $(FOLDER_CENTRAL_RENDERER)/%.o: $(FOLDER_CENTRAL_RENDERER)/%.c
-	cc $(_CFLAGS) $(CFLAGS_RENDERER) $(INCLUDE_CENTRAL) -c -o $@ $<
+	$(CC) $(_CFLAGS) $(CFLAGS_RENDERER) $(INCLUDE_CENTRAL) -c -o $@ $<
 
 $(FOLDER_CENTRAL_RENDERER)/%.o: $(FOLDER_CENTRAL_RENDERER)/%.cpp
 	$(CXX) $(_CPPFLAGS) $(CFLAGS_RENDERER) $(INCLUDE_CENTRAL) -export-dynamic -c -o $@ $<
@@ -209,6 +209,8 @@ CENTRAL_OSD_ALL := $(FOLDER_CENTRAL_OSD)/osd_common.o $(FOLDER_CENTRAL_OSD)/osd.
 CENTRAL_OLED_ALL := $(FOLDER_CENTRAL_OLED)/driver_ssd1306.o $(FOLDER_CENTRAL_OLED)/oled_icon_loader.o $(FOLDER_CENTRAL_OLED)/oled_ssd1306.o $(FOLDER_CENTRAL_OLED)/oled_render.o
 CENTRAL_ALL := $(FOLDER_CENTRAL)/notifications.o $(FOLDER_CENTRAL)/launchers_controller.o $(FOLDER_CENTRAL)/local_stats.o $(FOLDER_CENTRAL)/rx_scope.o $(FOLDER_CENTRAL)/forward_watch.o $(FOLDER_CENTRAL)/timers.o $(FOLDER_CENTRAL)/ui_alarms.o $(FOLDER_CENTRAL)/media.o $(FOLDER_CENTRAL)/pairing.o $(FOLDER_CENTRAL)/link_watch.o $(FOLDER_CENTRAL)/warnings.o $(FOLDER_CENTRAL)/handle_commands.o $(FOLDER_CENTRAL)/events.o $(FOLDER_CENTRAL)/shared_vars_ipc.o $(FOLDER_CENTRAL)/shared_vars_state.o $(FOLDER_CENTRAL)/shared_vars_osd.o $(FOLDER_CENTRAL)/fonts.o $(FOLDER_CENTRAL)/keyboard.o $(FOLDER_CENTRAL)/quickactions.o $(FOLDER_CENTRAL)/shared_vars.o $(FOLDER_BASE)/camera_utils.o $(FOLDER_CENTRAL)/parse_msp.o $(FOLDER_BASE)/hardware_files.o $(FOLDER_COMMON)/strings_table.o $(FOLDER_COMMON)/strings_loc.o $(FOLDER_BASE)/wiringPiI2C_radxa.o $(FOLDER_BASE)/msp.o
 CENTRAL_RADIO := $(FOLDER_RADIO)/radiopackets2.o $(FOLDER_RADIO)/radiopackets_short.o $(FOLDER_RADIO)/radiotap.o $(FOLDER_BASE)/tx_powers.o
+
+.PHONY: all vehicle station tests ruby_utils ruby_plugins clean cleanstation
 
 all: vehicle station ruby_i2c ruby_central tests
 
@@ -284,20 +286,22 @@ ruby_rt_station: $(FOLDER_STATION)/ruby_rt_station.o $(MODULE_BASE) $(MODULE_BAS
 
 ruby_plugins: ruby_plugin_osd_ahi ruby_plugin_gauge_speed ruby_plugin_gauge_altitude ruby_plugin_gauge_ahi ruby_plugin_gauge_heading
 
-ruby_plugin_osd_ahi: $(FOLDER_PLUGINS_OSD)/ruby_plugin_osd_ahi.o code/public/utils/osd_plugins_utils.o core_plugins_utils.o
-	$(CXX) $(_CPPFLAGS) -o $@ $^ $(_LDFLAGS) -shared -Wl,-soname,ruby_plugin_osd_ahi2.so.1 -o ruby_plugin_osd_ahi2.so.1.0.1 -lc
+MODULE_PLUGINS_UTILS := code/public/utils/osd_plugins_utils.o code/public/utils/core_plugins_utils.o
 
-ruby_plugin_gauge_speed: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_speed.o osd_plugins_utils.o core_plugins_utils.o
-	gcc $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_speed.o osd_plugins_utils.o core_plugins_utils.o -shared -Wl,-soname,ruby_plugin_gauge_speed2.so.1 -o ruby_plugin_gauge_speed2.so.1.0.1 -lc
+ruby_plugin_osd_ahi: $(FOLDER_PLUGINS_OSD)/ruby_plugin_osd_ahi.o $(MODULE_PLUGINS_UTILS)
+	$(CXX) $(_CPPFLAGS) $^ $(_LDFLAGS) -shared -Wl,-soname,ruby_plugin_osd_ahi2.so.1 -o ruby_plugin_osd_ahi2.so.1.0.1 -lc
 
-ruby_plugin_gauge_altitude: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_altitude.o osd_plugins_utils.o core_plugins_utils.o
-	gcc $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_altitude.o osd_plugins_utils.o core_plugins_utils.o -shared -Wl,-soname,ruby_plugin_gauge_altitude2.so.1 -o ruby_plugin_gauge_altitude2.so.1.0.1 -lc
+ruby_plugin_gauge_speed: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_speed.o $(MODULE_PLUGINS_UTILS)
+	$(CC) $^ -shared -Wl,-soname,ruby_plugin_gauge_speed2.so.1 -o ruby_plugin_gauge_speed2.so.1.0.1 -lc
 
-ruby_plugin_gauge_ahi: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_ahi.o osd_plugins_utils.o core_plugins_utils.o
-	gcc $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_ahi.o osd_plugins_utils.o core_plugins_utils.o -shared -Wl,-soname,ruby_plugin_gauge_ahi2.so.1 -o ruby_plugin_gauge_ahi2.so.1.0.1 -lc
+ruby_plugin_gauge_altitude: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_altitude.o $(MODULE_PLUGINS_UTILS)
+	$(CC) $^ -shared -Wl,-soname,ruby_plugin_gauge_altitude2.so.1 -o ruby_plugin_gauge_altitude2.so.1.0.1 -lc
 
-ruby_plugin_gauge_heading: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_heading.o osd_plugins_utils.o core_plugins_utils.o
-	gcc $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_heading.o osd_plugins_utils.o core_plugins_utils.o -shared -Wl,-soname,ruby_plugin_gauge_heading2.so.1 -o ruby_plugin_gauge_heading2.so.1.0.1 -lc
+ruby_plugin_gauge_ahi: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_ahi.o $(MODULE_PLUGINS_UTILS)
+	$(CC) $^ -shared -Wl,-soname,ruby_plugin_gauge_ahi2.so.1 -o ruby_plugin_gauge_ahi2.so.1.0.1 -lc
+
+ruby_plugin_gauge_heading: $(FOLDER_PLUGINS_OSD)/ruby_plugin_gauge_heading.o $(MODULE_PLUGINS_UTILS)
+	$(CC) $^ -shared -Wl,-soname,ruby_plugin_gauge_heading2.so.1 -o ruby_plugin_gauge_heading2.so.1.0.1 -lc
 
 ruby_player_radxa:code/r_player/ruby_player_radxa.o code/r_player/mpp_core.o $(FOLDER_BASE)/hdmi.o $(FOLDER_BASE)/ctrl_settings.o $(FOLDER_BASE)/shared_mem.o $(FOLDER_BASE)/parser_h264.o $(CENTRAL_RENDER_CODE) $(MODULE_MINIMUM_BASE) $(MODULE_MINIMUM_COMMON)
 	$(CXX) $(_CPPFLAGS) $(CFLAGS_RENDERER) -o $@ $^ $(_LDFLAGS) $(LDFLAGS_RENDERER) $(LDFLAGS_CENTRAL) $(LDFLAGS_CENTRAL2) -ldl -lc -lrockchip_mpp
@@ -311,7 +315,7 @@ endif
 test_cairo:$(FOLDER_TESTS)/test_cairo.o $(MODULE_BASE) $(MODULE_BASE2) $(MODULE_COMMON) $(MODULE_RADIO) $(MODULE_MODELS)
 	$(CXX) $(_CPPFLAGS) -o $@ $^ $(_LDFLAGS) -ldl -lc
 
-test_log:$(FOLDER_TESTS)/test_log.o core_plugins_utils.o $(MODULE_BASE) $(MODULE_BASE2) $(MODULE_COMMON) $(MODULE_RADIO) $(MODULE_MODELS)
+test_log:$(FOLDER_TESTS)/test_log.o code/public/utils/core_plugins_utils.o $(MODULE_BASE) $(MODULE_BASE2) $(MODULE_COMMON) $(MODULE_RADIO) $(MODULE_MODELS)
 	$(CXX) $(_CPPFLAGS) -o $@ $^ $(_LDFLAGS) -ldl -lc
 
 test_gpio:$(FOLDER_TESTS)/test_gpio.o $(MODULE_BASE) $(MODULE_BASE2) $(MODULE_COMMON) $(MODULE_RADIO) $(MODULE_MODELS)
@@ -369,6 +373,7 @@ clean:
           $(FOLDER_CENTRAL)/*.o $(FOLDER_CENTRAL_MENU)/*.o $(FOLDER_CENTRAL_OSD)/*.o $(FOLDER_CENTRAL_RENDERER)/*.o $(FOLDER_CENTRAL_OLED)/*.o \
           $(FOLDER_PLUGINS_OSD)/*.o code/public/utils/*.o code/r_player/*.o $(FOLDER_TESTS)/*.o \
           code/r_i2c/*.o
+	find code -name "*.d" -delete
 
 cleanstation:
 	rm -rf ruby_start ruby_i2c ruby_logger ruby_initdhcp ruby_init_wifi ruby_sik_config ruby_alive ruby_video_proc ruby_update ruby_update_worker ruby_dbg \
@@ -380,3 +385,7 @@ cleanstation:
           $(FOLDER_BASE)/*.o $(FOLDER_COMMON)/*.o $(FOLDER_RADIO)/*.o $(FOLDER_START)/*.o $(FOLDER_RUTILS)/*.o $(FOLDER_UTILS)/*.o $(FOLDER_STATION)/*.o \
           $(FOLDER_TESTS)/*.o $(FOLDER_PLUGINS_OSD)/*.o \
           code/r_i2c/*.o code/r_utils/*.o code/r_player/*.o
+	find code -name "*.d" -delete
+
+# Auto-generated header dependency files (created by -MMD)
+-include $(shell find code -name "*.d" 2>/dev/null)
