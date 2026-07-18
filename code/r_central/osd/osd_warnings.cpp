@@ -51,11 +51,98 @@ extern bool s_bDebugOSDShowAll;
 
 static bool bHasPITModeWarning = false;
 
+// Link warning outline: screen edge halo that fades in and shifts from yellow
+// to red as the radio downlink quality degrades from the warning level down to
+// the critical level.
+#define OSD_LINK_OUTLINE_QUALITY_WARNING 70.0f
+#define OSD_LINK_OUTLINE_QUALITY_CRITICAL 30.0f
+#define OSD_LINK_OUTLINE_BAND_PERCENT 0.05f
+#define OSD_LINK_OUTLINE_MAX_ALPHA 0.85f
+#define OSD_LINK_OUTLINE_GRADIENT_STEPS 12
+
+static float s_fOSDLinkOutlineQuality = 100.0f;
+static u32 s_uOSDLinkOutlineLastTime = 0;
+
 void osd_warnings_reset()
 {
    g_bHasVideoDataOverloadAlarm = false;
    g_bHasVideoTxOverloadAlarm = false;
    bHasPITModeWarning = false;
+   s_fOSDLinkOutlineQuality = 100.0f;
+   s_uOSDLinkOutlineLastTime = 0;
+}
+
+void osd_warnings_render_link_outline()
+{
+   Model* pActiveModel = osd_get_current_data_source_vehicle_model();
+   if ( NULL == pActiveModel )
+      return;
+   if ( ! (pActiveModel->osd_params.osd_flags3[osd_get_current_layout_index()] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE) )
+      return;
+   if ( ! g_bIsRouterReady )
+      return;
+
+   // React to the best radio interface, so with multiple receivers the outline
+   // shows up only when even the strongest link is degraded.
+   int iMaxQuality = -1;
+   for( int i=0; i<g_SM_RadioStats.countLocalRadioInterfaces; i++ )
+   {
+      if ( g_SM_RadioStats.radio_interfaces[i].assignedLocalRadioLinkId < 0 )
+         continue;
+      if ( ! g_SM_RadioStats.radio_interfaces[i].openedForRead )
+         continue;
+      if ( g_SM_RadioStats.radio_interfaces[i].rxQuality > iMaxQuality )
+         iMaxQuality = g_SM_RadioStats.radio_interfaces[i].rxQuality;
+   }
+
+   bool bLinkLost = false;
+   if ( g_iCurrentActiveVehicleRuntimeInfoIndex >= 0 )
+      bLinkLost = g_VehiclesRuntimeInfo[g_iCurrentActiveVehicleRuntimeInfoIndex].bLinkLost;
+
+   float fQuality = (float)iMaxQuality;
+   if ( (iMaxQuality < 0) || bLinkLost )
+      fQuality = 0.0f;
+
+   // Smooth over roughly half a second so brief drops don't flash the outline
+   float fFactor = 1.0f;
+   if ( (0 != s_uOSDLinkOutlineLastTime) && (g_TimeNow > s_uOSDLinkOutlineLastTime) )
+   {
+      fFactor = (float)(g_TimeNow - s_uOSDLinkOutlineLastTime)/500.0f;
+      if ( fFactor > 1.0f )
+         fFactor = 1.0f;
+   }
+   s_uOSDLinkOutlineLastTime = g_TimeNow;
+   s_fOSDLinkOutlineQuality = s_fOSDLinkOutlineQuality*(1.0f-fFactor) + fQuality*fFactor;
+
+   float fSeverity = (OSD_LINK_OUTLINE_QUALITY_WARNING - s_fOSDLinkOutlineQuality) / (OSD_LINK_OUTLINE_QUALITY_WARNING - OSD_LINK_OUTLINE_QUALITY_CRITICAL);
+   if ( fSeverity > 1.0f )
+      fSeverity = 1.0f;
+   if ( fSeverity < 0.02f )
+      return;
+
+   float fGreen = 255.0f * (1.0f - fSeverity);
+   float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT;
+   float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
+   float fStepH = fBandH / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+   float fStepW = fBandW / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+
+   g_pRenderEngine->setStrokeSize(0.0f);
+
+   // Concentric rings, opaque at the screen edge and fading toward the center
+   for( int iStep=0; iStep<OSD_LINK_OUTLINE_GRADIENT_STEPS; iStep++ )
+   {
+      float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fSeverity * (1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_GRADIENT_STEPS);
+      g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
+      g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
+
+      float xOut = fStepW * (float)iStep;
+      float yOut = fStepH * (float)iStep;
+      g_pRenderEngine->drawRect(xOut, yOut, 1.0f - 2.0f*xOut, fStepH);
+      g_pRenderEngine->drawRect(xOut, 1.0f - yOut - fStepH, 1.0f - 2.0f*xOut, fStepH);
+      g_pRenderEngine->drawRect(xOut, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+      g_pRenderEngine->drawRect(1.0f - xOut - fStepW, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+   }
+   osd_set_colors();
 }
 
 void _osd_warnings_check_pit_mode(Model* pActiveModel)
