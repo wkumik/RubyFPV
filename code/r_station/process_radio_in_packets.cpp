@@ -910,7 +910,7 @@ void process_received_single_radio_packet(int iInterfaceIndex, u8* pData, int iD
           (pPHVS->uVideoStatusFlags2 & VIDEO_STATUS_FLAGS2_IS_NAL_O)?"o":"",
           (pPHVS->uVideoStatusFlags2 & VIDEO_STATUS_FLAGS2_IS_END_OF_FRAME)?1:0,
           iDbgDR);
-      /**/
+      */
       }
 
    if ( g_bFirstModelPairingDone && (!g_bSearching) )

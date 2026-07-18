@@ -2104,9 +2104,6 @@ bool process_command(u8* pBuffer, int length)
    if ( uCommandType == COMMAND_ID_SET_MODEL_FLAGS )
    {
       sendCommandReply(COMMAND_RESPONSE_FLAGS_OK, 0, 0);
-      bool bHadServiceLog = (g_pCurrentModel->uModelFlags & MODEL_FLAG_USE_LOGER_SERVICE)?true:false;
-      if ( g_pCurrentModel->uModelFlags & MODEL_FLAG_DISABLE_ALL_LOGS )
-         bHadServiceLog = false;
       g_pCurrentModel->uModelFlags = pPHC->command_param;
       saveCurrentModel();
       signalReloadModel(0, 0);
@@ -2125,7 +2122,7 @@ bool process_command(u8* pBuffer, int length)
    if ( uCommandType == COMMAND_ID_RESET_RADIO_LINK )
    {
       u32 linkIndex = pPHC->command_param;
-      if ( (linkIndex < 0) || (linkIndex >= (u32)g_pCurrentModel->radioLinksParams.links_count) )
+      if ( linkIndex >= (u32)g_pCurrentModel->radioLinksParams.links_count )
       {
          log_error_and_alarm("Invalid link index received in command: link %d (%d radio links on vehicle)", (int)linkIndex+1, g_pCurrentModel->radioLinksParams.links_count);
          sendCommandReply(COMMAND_RESPONSE_FLAGS_FAILED, 0, 0);
@@ -2174,7 +2171,7 @@ bool process_command(u8* pBuffer, int length)
       piData++;
       int datarateData = *piData;
 
-      if ( (linkIndex < 0) || (linkIndex >= (u32)g_pCurrentModel->radioLinksParams.links_count) )
+      if ( linkIndex >= (u32)g_pCurrentModel->radioLinksParams.links_count )
       {
          log_error_and_alarm("Invalid link index received in command: link %d (%d radio links on vehicle)", (int)linkIndex+1, g_pCurrentModel->radioLinksParams.links_count);
          sendCommandReply(COMMAND_RESPONSE_FLAGS_FAILED, 0, 0);
