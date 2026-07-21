@@ -56,6 +56,10 @@ void rx_osd_recording_vehicle_feed_msp(u8* pData, int iLen, bool bAllowScreenUpd
    if ( NULL == pData || iLen <= 0 )
       return;
    _ensure_msp_state_init();
+   // FC type is detected by telemetry_msp's own parser (s_PHTMSP), not this
+   // local state; without it _parse_msp_osd_add_string() drops every DRAW_STRING.
+   s_MSPState.headerTelemetryMSP.uMSPFlags &= ~MSP_FLAGS_FC_TYPE_MASK;
+   s_MSPState.headerTelemetryMSP.uMSPFlags |= telemetry_msp_get_fc_type_flag();
    parse_msp_incoming_data(&s_MSPState, pData, iLen, bAllowScreenUpdate);
 }
 
