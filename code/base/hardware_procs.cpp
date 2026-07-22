@@ -1494,8 +1494,8 @@ int hw_init_worker_thread_attrs(pthread_attr_t* pAttr, int iDesiredCore, int iSt
       if ( (NULL != strstr(szSource, "video_recording")) )
          iNewStackSize = 256 * 1024;
    }
-   if ( iNewStackSize < PTHREAD_STACK_MIN )
-      iNewStackSize = PTHREAD_STACK_MIN;
+   if ( iNewStackSize < (size_t)PTHREAD_STACK_MIN )
+      iNewStackSize = (size_t)PTHREAD_STACK_MIN;
 
    for( int i=0; i<3; i++ )
    {

@@ -4023,7 +4023,7 @@ bool Model::validate_settings()
 
    for( int i=0; i<MODEL_MAX_OSD_SCREENS; i++ )
    {
-      if ( (osd_params.osd_layout_preset[i] < 0) || (osd_params.osd_layout_preset[i] > OSD_PRESET_CUSTOM) )
+      if ( osd_params.osd_layout_preset[i] > OSD_PRESET_CUSTOM )
          osd_params.osd_layout_preset[i] = OSD_PRESET_DEFAULT;
    }
 
@@ -4111,15 +4111,13 @@ bool Model::validate_settings()
    if ( (rc_params.rc_failsafe_timeout_ms < 50) || (rc_params.rc_failsafe_timeout_ms > 5000) )
       bRCOk = false;
 
-   if ( rc_params.iRCTranslationType < 0 )
-      bRCOk = false;
-   else if ( (rc_params.iRCTranslationType != RC_TRANSLATION_TYPE_2000) && (rc_params.iRCTranslationType != RC_TRANSLATION_TYPE_2000) )
+   if ( (rc_params.iRCTranslationType != RC_TRANSLATION_TYPE_NONE) &&
+        (rc_params.iRCTranslationType != RC_TRANSLATION_TYPE_2000) &&
+        (rc_params.iRCTranslationType != RC_TRANSLATION_TYPE_4000) )
       bRCOk = false;
 
    for( int i=0; i<MAX_RC_CHANNELS; i++ )
    {
-      if ( rc_params.rcChExpo[i] < 0 )
-         bRCOk = false;
       if ( rc_params.rcChExpo[i] > 90 )
          bRCOk = false;
 
