@@ -30,6 +30,7 @@
     SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <math.h>
 #include "../../base/base.h"
 #include "../../base/config.h"
 #include "../../base/ctrl_settings.h"
@@ -56,9 +57,14 @@ static bool bHasPITModeWarning = false;
 // the critical level.
 #define OSD_LINK_OUTLINE_QUALITY_WARNING 70.0f
 #define OSD_LINK_OUTLINE_QUALITY_CRITICAL 30.0f
-#define OSD_LINK_OUTLINE_BAND_PERCENT 0.05f
-#define OSD_LINK_OUTLINE_MAX_ALPHA 0.6f
-#define OSD_LINK_OUTLINE_GRADIENT_STEPS 36
+#define OSD_LINK_OUTLINE_BAND_PERCENT 0.095f
+#define OSD_LINK_OUTLINE_BAND_GROWTH 2.0f
+#define OSD_LINK_OUTLINE_MAX_ALPHA 0.95f
+#define OSD_LINK_OUTLINE_SEVERITY_EXPONENT 2.5f
+#define OSD_LINK_OUTLINE_GRADIENT_STEPS 96
+#define OSD_LINK_OUTLINE_CORNER_PERCENT 0.27f
+#define OSD_LINK_OUTLINE_CORNER_STEPS 24
+#define OSD_LINK_OUTLINE_CORNER_STEP_ALPHA 0.05f
 #define OSD_LINK_BLACK_BARS_BAND_PERCENT 0.07f
 #define OSD_LINK_BLACK_BARS_MAX_ALPHA 0.75f
 
@@ -108,16 +114,22 @@ void osd_warnings_render_link_outline()
    if ( (iMaxQuality < 0) || bLinkLost )
       fQuality = 0.0f;
 
-   // Smooth over roughly half a second so brief drops don't flash the outline
-   float fFactor = 1.0f;
+   // The quality source refreshes every ~500 ms; ease the displayed value
+   // toward each new sample with a ~350 ms time constant so the outline
+   // animates continuously through the sample window without lagging behind
+   u32 uDeltaMs = 0;
    if ( (0 != s_uOSDLinkOutlineLastTime) && (g_TimeNow > s_uOSDLinkOutlineLastTime) )
    {
-      fFactor = (float)(g_TimeNow - s_uOSDLinkOutlineLastTime)/500.0f;
-      if ( fFactor > 1.0f )
-         fFactor = 1.0f;
+      uDeltaMs = g_TimeNow - s_uOSDLinkOutlineLastTime;
+      if ( uDeltaMs > 100 )
+         uDeltaMs = 100;
    }
    s_uOSDLinkOutlineLastTime = g_TimeNow;
-   s_fOSDLinkOutlineQuality = s_fOSDLinkOutlineQuality*(1.0f-fFactor) + fQuality*fFactor;
+
+   float fEase = (float)uDeltaMs / 350.0f;
+   if ( fEase > 1.0f )
+      fEase = 1.0f;
+   s_fOSDLinkOutlineQuality += (fQuality - s_fOSDLinkOutlineQuality) * fEase;
 
    float fSeverity = (OSD_LINK_OUTLINE_QUALITY_WARNING - s_fOSDLinkOutlineQuality) / (OSD_LINK_OUTLINE_QUALITY_WARNING - OSD_LINK_OUTLINE_QUALITY_CRITICAL);
    if ( fSeverity > 1.0f )
@@ -144,27 +156,75 @@ void osd_warnings_render_link_outline()
    }
    else
    {
+      // Power-curve response: barely-there at the warning edge, strongly
+      // visible near link lost
+      float fIntensity = powf(fSeverity, OSD_LINK_OUTLINE_SEVERITY_EXPONENT);
       float fGreen = 255.0f * (1.0f - fSeverity);
-      float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT;
-      float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
-      float fStepH = fBandH / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
-      float fStepW = fBandW / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+      // The band also grows inward as the link gets worse
+      float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT * (1.0f + OSD_LINK_OUTLINE_BAND_GROWTH*fIntensity);
 
-      // Concentric rings fading toward the center with an eased (quadratic)
-      // falloff so no discrete banding is visible
-      for( int iStep=0; iStep<OSD_LINK_OUTLINE_GRADIENT_STEPS; iStep++ )
+      // Per-pixel concentric 1px rings: the aspect-corrected band is square in
+      // pixels, so ring i insets exactly i pixels on every side. Coordinates
+      // are pixel-snapped (+0.3/+0.4 guards against float truncation) so rings
+      // tile exactly - no seams, no banding.
+      int iScreenW = g_pRenderEngine->getScreenWidth();
+      int iScreenH = g_pRenderEngine->getScreenHeight();
+      float fW = (float)iScreenW;
+      float fH = (float)iScreenH;
+      int iBandPx = (int)(fBandH * fH);
+      if ( iBandPx > iScreenH/3 )
+         iBandPx = iScreenH/3;
+      for( int i=0; i<iBandPx; i++ )
       {
-         float fT = 1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
-         float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fSeverity * fT * fT;
-         g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
-         g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
+         float fT = 1.0f - (float)i/(float)iBandPx;
+         float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fIntensity * fT * fT;
+         // The output surface holds premultiplied alpha (cairo ARGB32 convention),
+         // so scale the color by the alpha or the edge renders overbright
+         g_pRenderEngine->setFill(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
+         g_pRenderEngine->setStroke(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
 
-         float xOut = fStepW * (float)iStep;
-         float yOut = fStepH * (float)iStep;
-         g_pRenderEngine->drawRect(xOut, yOut, 1.0f - 2.0f*xOut, fStepH);
-         g_pRenderEngine->drawRect(xOut, 1.0f - yOut - fStepH, 1.0f - 2.0f*xOut, fStepH);
-         g_pRenderEngine->drawRect(xOut, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
-         g_pRenderEngine->drawRect(1.0f - xOut - fStepW, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+         float fX = ((float)i + 0.3f)/fW;
+         float fY = ((float)i + 0.3f)/fH;
+         float f1pxW = 1.4f/fW;
+         float f1pxH = 1.4f/fH;
+         float fRowW = ((float)(iScreenW - 2*i) + 0.4f)/fW;
+         float fColH = ((float)(iScreenH - 2*i - 2) + 0.4f)/fH;
+         // top and bottom 1px rows
+         g_pRenderEngine->drawRect(fX, fY, fRowW, f1pxH);
+         g_pRenderEngine->drawRect(fX, ((float)(iScreenH - i - 1) + 0.3f)/fH, fRowW, f1pxH);
+         // left and right 1px columns between the rows
+         g_pRenderEngine->drawRect(fX, ((float)(i + 1) + 0.3f)/fH, f1pxW, fColH);
+         g_pRenderEngine->drawRect(((float)(iScreenW - i - 1) + 0.3f)/fW, ((float)(i + 1) + 0.3f)/fH, f1pxW, fColH);
+      }
+
+      // Corner vignette: nested corner squares whose blended overlap deepens
+      // the color diagonally toward each corner for a natural vignette feel
+      float fCornH = OSD_LINK_OUTLINE_CORNER_PERCENT;
+      float fCornW = fCornH / g_pRenderEngine->getAspectRatio();
+      for( int iStep=0; iStep<OSD_LINK_OUTLINE_CORNER_STEPS; iStep++ )
+      {
+         float fScale = 1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_CORNER_STEPS;
+         float fAlpha = OSD_LINK_OUTLINE_CORNER_STEP_ALPHA * fIntensity;
+         // The first (largest) square can land on untouched pixels, which are
+         // stored as-given and must be premultiplied. The inner squares blend
+         // over already-drawn pixels; that blend path multiplies the color by
+         // alpha itself, so they must pass straight color.
+         if ( 0 == iStep )
+         {
+            g_pRenderEngine->setFill(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
+            g_pRenderEngine->setStroke(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
+         }
+         else
+         {
+            g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
+            g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
+         }
+         float sW = fCornW * fScale;
+         float sH = fCornH * fScale;
+         g_pRenderEngine->drawRect(0.0f, 0.0f, sW, sH);
+         g_pRenderEngine->drawRect(1.0f - sW, 0.0f, sW, sH);
+         g_pRenderEngine->drawRect(0.0f, 1.0f - sH, sW, sH);
+         g_pRenderEngine->drawRect(1.0f - sW, 1.0f - sH, sW, sH);
       }
    }
    g_pRenderEngine->setAlphaBlendingEnabled(bWasBlending);
