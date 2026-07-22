@@ -372,11 +372,11 @@ MenuVehicleOSDElements::MenuVehicleOSDElements(void)
    m_pItemsSelect[23]->setIsEditable();
    m_IndexSignalBarsPosition = addMenuItem(m_pItemsSelect[23]);
 
-   m_pItemsSelect[37] = new MenuItemSelect(L("Link warning outline"), L("Shows a colored outline around the edges of the screen when the radio link quality gets poor. It fades from yellow to red as the link degrades."));
-   m_pItemsSelect[37]->addSelection(L("No"));
-   m_pItemsSelect[37]->addSelection(L("Yes"));
-   if ( bUseMultiSelection )
-      m_pItemsSelect[37]->setUseMultiViewLayout();
+   m_pItemsSelect[37] = new MenuItemSelect(L("Poor link indication"), L("How to indicate on screen that the radio link quality got poor: a colored outline that fades from yellow to red as the link degrades, or dark bars at the edges of the screen."));
+   m_pItemsSelect[37]->addSelection(L("None"));
+   m_pItemsSelect[37]->addSelection(L("Colour outline"));
+   m_pItemsSelect[37]->addSelection(L("Black bars"));
+   m_pItemsSelect[37]->setIsEditable();
    m_IndexLinkWarningOutline = addMenuItem(m_pItemsSelect[37]);
 
    m_IndexHIDOSD = -1;
@@ -567,7 +567,12 @@ void MenuVehicleOSDElements::valuesToUI()
    else
       m_pItemsSelect[23]->setEnabled(false);
 
-   m_pItemsSelect[37]->setSelectedIndex((g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE)?1:0);
+   if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS )
+      m_pItemsSelect[37]->setSelectedIndex(2);
+   else if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE )
+      m_pItemsSelect[37]->setSelectedIndex(1);
+   else
+      m_pItemsSelect[37]->setSelectedIndex(0);
 
    if ( -1 != m_IndexHIDOSD )
       m_pItemsSelect[24]->setSelectedIndex((g_pCurrentModel->osd_params.osd_flags[iScreenIndex] & OSD_FLAG_SHOW_HID_IN_OSD)?1:0);
@@ -1157,10 +1162,11 @@ void MenuVehicleOSDElements::onSelectItem()
 
    if ( m_IndexLinkWarningOutline == m_SelectedIndex )
    {
-      if ( 0 == m_pItemsSelect[37]->getSelectedIndex() )
-         params.osd_flags3[iScreenIndex] &= ~OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
-      else
+      params.osd_flags3[iScreenIndex] &= ~(OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE | OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS);
+      if ( 1 == m_pItemsSelect[37]->getSelectedIndex() )
          params.osd_flags3[iScreenIndex] |= OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
+      if ( 2 == m_pItemsSelect[37]->getSelectedIndex() )
+         params.osd_flags3[iScreenIndex] |= OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS;
       params.osd_layout_preset[iScreenIndex] = OSD_PRESET_CUSTOM;
       sendToVehicle = true;
    }

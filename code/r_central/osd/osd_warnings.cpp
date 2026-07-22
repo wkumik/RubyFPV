@@ -57,8 +57,10 @@ static bool bHasPITModeWarning = false;
 #define OSD_LINK_OUTLINE_QUALITY_WARNING 70.0f
 #define OSD_LINK_OUTLINE_QUALITY_CRITICAL 30.0f
 #define OSD_LINK_OUTLINE_BAND_PERCENT 0.05f
-#define OSD_LINK_OUTLINE_MAX_ALPHA 0.85f
-#define OSD_LINK_OUTLINE_GRADIENT_STEPS 12
+#define OSD_LINK_OUTLINE_MAX_ALPHA 0.6f
+#define OSD_LINK_OUTLINE_GRADIENT_STEPS 36
+#define OSD_LINK_BLACK_BARS_BAND_PERCENT 0.07f
+#define OSD_LINK_BLACK_BARS_MAX_ALPHA 0.75f
 
 static float s_fOSDLinkOutlineQuality = 100.0f;
 static u32 s_uOSDLinkOutlineLastTime = 0;
@@ -77,7 +79,10 @@ void osd_warnings_render_link_outline()
    Model* pActiveModel = osd_get_current_data_source_vehicle_model();
    if ( NULL == pActiveModel )
       return;
-   if ( ! (pActiveModel->osd_params.osd_flags3[osd_get_current_layout_index()] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE) )
+   u32 uFlags3 = pActiveModel->osd_params.osd_flags3[osd_get_current_layout_index()];
+   bool bModeOutline = (uFlags3 & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE)?true:false;
+   bool bModeBlackBars = (uFlags3 & OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS)?true:false;
+   if ( (! bModeOutline) && (! bModeBlackBars) )
       return;
    if ( ! g_bIsRouterReady )
       return;
@@ -120,28 +125,49 @@ void osd_warnings_render_link_outline()
    if ( fSeverity < 0.02f )
       return;
 
-   float fGreen = 255.0f * (1.0f - fSeverity);
-   float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT;
-   float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
-   float fStepH = fBandH / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
-   float fStepW = fBandW / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
-
+   bool bWasBlending = g_pRenderEngine->isAlphaBlendingEnabled();
+   g_pRenderEngine->setAlphaBlendingEnabled(true);
    g_pRenderEngine->setStrokeSize(0.0f);
 
-   // Concentric rings, opaque at the screen edge and fading toward the center
-   for( int iStep=0; iStep<OSD_LINK_OUTLINE_GRADIENT_STEPS; iStep++ )
+   if ( bModeBlackBars )
    {
-      float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fSeverity * (1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_GRADIENT_STEPS);
-      g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
-      g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
-
-      float xOut = fStepW * (float)iStep;
-      float yOut = fStepH * (float)iStep;
-      g_pRenderEngine->drawRect(xOut, yOut, 1.0f - 2.0f*xOut, fStepH);
-      g_pRenderEngine->drawRect(xOut, 1.0f - yOut - fStepH, 1.0f - 2.0f*xOut, fStepH);
-      g_pRenderEngine->drawRect(xOut, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
-      g_pRenderEngine->drawRect(1.0f - xOut - fStepW, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+      // Simple solid dark bars at the screen edges, opacity scales with severity
+      float fAlpha = OSD_LINK_BLACK_BARS_MAX_ALPHA * fSeverity;
+      float fBandH = OSD_LINK_BLACK_BARS_BAND_PERCENT;
+      float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
+      g_pRenderEngine->setFill(0.0f, 0.0f, 0.0f, fAlpha);
+      g_pRenderEngine->setStroke(0.0f, 0.0f, 0.0f, fAlpha);
+      g_pRenderEngine->drawRect(0.0f, 0.0f, 1.0f, fBandH);
+      g_pRenderEngine->drawRect(0.0f, 1.0f - fBandH, 1.0f, fBandH);
+      g_pRenderEngine->drawRect(0.0f, fBandH, fBandW, 1.0f - 2.0f*fBandH);
+      g_pRenderEngine->drawRect(1.0f - fBandW, fBandH, fBandW, 1.0f - 2.0f*fBandH);
    }
+   else
+   {
+      float fGreen = 255.0f * (1.0f - fSeverity);
+      float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT;
+      float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
+      float fStepH = fBandH / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+      float fStepW = fBandW / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+
+      // Concentric rings fading toward the center with an eased (quadratic)
+      // falloff so no discrete banding is visible
+      for( int iStep=0; iStep<OSD_LINK_OUTLINE_GRADIENT_STEPS; iStep++ )
+      {
+         float fT = 1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+         float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fSeverity * fT * fT;
+         g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
+         g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
+
+         float xOut = fStepW * (float)iStep;
+         float yOut = fStepH * (float)iStep;
+         g_pRenderEngine->drawRect(xOut, yOut, 1.0f - 2.0f*xOut, fStepH);
+         g_pRenderEngine->drawRect(xOut, 1.0f - yOut - fStepH, 1.0f - 2.0f*xOut, fStepH);
+         g_pRenderEngine->drawRect(xOut, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+         g_pRenderEngine->drawRect(1.0f - xOut - fStepW, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+      }
+   }
+   g_pRenderEngine->setAlphaBlendingEnabled(bWasBlending);
    osd_set_colors();
 }
 
