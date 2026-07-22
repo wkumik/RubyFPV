@@ -213,3 +213,80 @@ Public SDK in `code/public/`:
 - **Dev Guide:** https://rubyfpv.com/development_guide.php
 - **GitHub (upstream):** https://github.com/RubyFPV/RubyFPV
 - **Forum:** https://www.rcgroups.com/forums/showthread.php?3880253
+
+## Release build & packaging (process validated with v11.9, 2026-07-22)
+
+Environment-specific paths below are from the maintainer's setup (Windows +
+WSL + a Radxa Zero 3W GS on the LAN); adapt as needed.
+
+### 1. Version bump
+- `code/base/base.h`: `SYSTEM_SW_VERSION_MAJOR` / `SYSTEM_SW_VERSION_MINOR` /
+  `SYSTEM_SW_BUILD_NUMBER` (e.g. 11.9 = 11/9/11900)
+- `version_ruby_base.txt` (e.g. `11.9`)
+- Commit before building so binaries carry the release commit.
+
+### 2. Drone (OpenIPC SSC338Q) cross-build — in WSL
+```bash
+cd <repo>
+TC=<path>/toolchain.sigmastar-infinity6e
+export PATH="$TC/bin:$PATH"
+export LDFLAGS=-Wl,--allow-shlib-undefined
+make clean
+make vehicle RUBY_BUILD_ENV=openipc \
+  CC="arm-linux-gcc -B$TC/arm-openipc-linux-gnueabihf/bin/" \
+  CXX="arm-linux-g++ -B$TC/arm-openipc-linux-gnueabihf/bin/" -j8
+```
+Release binaries: `ruby_start ruby_rt_vehicle ruby_tx_telemetry ruby_update
+ruby_logger` (+ utils). Always `make clean` for a release build; record md5s.
+
+### 3. Ground station (Radxa Zero 3W) native build — ON the GS
+The GS RTC resets to a past date on EVERY reboot. **Set the clock first** or
+make silently no-ops against newer .o files (green build, unchanged md5):
+```bash
+sudo date -u -s "<current UTC>"
+cd ~/RubyFPV-<tree>   # sync sources via git archive tarball or per-file push
+make clean
+make station ruby_central ruby_i2c ruby_plugins RUBY_BUILD_ENV=radxa -j4
+```
+Verify every output md5 CHANGED vs the previous build.
+
+### 4. Drone NOR image (`rubyfpv-ssc338q-<build>-nor.tgz`)
+Script: `_image_build/bake_drone_119.sh` (run via `wsl -u root`). Steps it
+performs: untar previous known-good image tgz -> `unsquashfs` rootfs ->
+swap `usr/sbin/ruby_*` with fresh builds -> `mksquashfs -comp xz` ->
+**regenerate `uImage.*.md5sum` + `rootfs.squashfs.*.md5sum` sidecars**
+(Companion/sysupgrade refuse the tgz without them) -> tar all four files.
+
+### 5. GS image (`ruby_image_radxa3ew_<build>.zip`)
+Script: `_image_build/bake_gs_119.sh` (run via `wsl -u root`; needs the 11.7
+base image zip + 11.8 update zip staged in `/root/vrx_build`). Loop-mounts the
+base image, overlays fresh binaries + plugins + res into `home/radxa/ruby`,
+repacks and zips.
+
+### 6. OTA update zip (`ruby_update_<ver>.zip`)
+Mirror the previous update zip layout exactly:
+`bin/radxaz3/ruby_*` (all GS binaries), `bin/ssc338q/` (ruby_start,
+ruby_rt_vehicle, ruby_tx_telemetry, ruby_update), `ruby_update.log`
+(version, date, changelog). **Zip with Linux/WSL `zip -r`** — PowerShell 5.1
+`Compress-Archive` writes backslash entry paths that break `unzip` on device.
+
+### 7. Hardware validation before tagging
+- Flash the drone tgz via OpenIPC Companion (needs the flashcp-fallback fix,
+  companion PR #191) or manually: `flashcp uImage /dev/mtd2; flashcp rootfs
+  /dev/mtd3; flash_eraseall /dev/mtd4; reboot`.
+- Factory-fresh boot MUST come up on the configured 5.8GHz channel (regression
+  guard for the iwconfig freq bug), pair, and stream video.
+- GS: deploy the fresh binaries to `~/ruby` (mv-into-place; direct cp fails
+  with "Text file busy") and reboot, or flash the image to a spare SD.
+
+### 8. Publish
+```bash
+git push origin <branch>
+gh release create v<ver> --repo <fork> --target <branch> \
+  --title "..." --notes-file RELEASE_NOTES.md \
+  <drone.tgz> <update.zip>
+gh release upload v<ver> --repo <fork> <gs-image.zip>   # large, do separately
+```
+If a fix lands minutes after tagging: cherry-pick, rebuild only affected
+binaries, rebake, `gh release delete-asset` + re-upload, and force-move the
+tag (`git tag -f v<ver> <commit> && git push -f origin v<ver>`).
