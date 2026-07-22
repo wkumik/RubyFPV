@@ -25,6 +25,7 @@ void hardware_camera_maj_set_daylight_off(int iDLOff, bool bAsync);
 void hardware_camera_maj_set_calibration_file(int iCameraType, int iCalibrationFileType, char* szCalibrationFile);
 
 void hardware_camera_maj_set_brightness(u32 uValue);
+void hardware_camera_maj_set_awb(u8 uWhiteBalance, u32 uWBTempK);
 void hardware_camera_maj_set_contrast(u32 uValue);
 void hardware_camera_maj_set_hue(u32 uValue);
 void hardware_camera_maj_set_saturation(u32 uValue);

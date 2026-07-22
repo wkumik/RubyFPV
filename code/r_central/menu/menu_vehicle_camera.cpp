@@ -339,6 +339,7 @@ void MenuVehicleCamera::addItems()
       m_IndexWhiteBalance = addMenuItem(m_pItemsSelect[3]);
 
       m_pItemsSlider[9] = new MenuItemSlider(L("WB Temperature (K)"), 2500,8000,5500, fSliderWidth);
+      m_pItemsSlider[9]->setStep(100);
       m_pItemsSlider[9]->setTooltip(L("Color temperature for the manual white balance lock, in Kelvin. Only used when White Balance is set to Manual."));
       m_pItemsSlider[9]->setMargin(fMargin);
       m_IndexWBTemp = addMenuItem(m_pItemsSlider[9]);

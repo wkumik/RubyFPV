@@ -1038,6 +1038,51 @@ void hardware_camera_maj_set_brightness(u32 uValue)
    }
 }
 
+void hardware_camera_maj_set_awb(u8 uWhiteBalance, u32 uWBTempK)
+{
+   if ( (uWhiteBalance == s_CurrentMajesticCamSettings.whitebalance) &&
+        ((uWBTempK & 0xFFFF) == (s_CurrentMajesticCamSettings.uDummyCamP & 0xFFFF)) )
+      return;
+
+   s_uMajesticLastChangeTime = get_current_timestamp_ms();
+   s_CurrentMajesticCamSettings.whitebalance = uWhiteBalance;
+   s_CurrentMajesticCamSettings.uDummyCamP = (s_CurrentMajesticCamSettings.uDummyCamP & 0xFFFF0000) | (uWBTempK & 0xFFFF);
+
+   if ( hwcam_be_get() != HWCAM_BE_WAYBEAM )
+      return;
+
+   char szComm[128];
+   bool bManual = (0xFF == uWhiteBalance) && (uWBTempK >= 2500) && (uWBTempK <= 8000);
+   if ( (0 != s_iPIDMajestic) && s_bThreadSetMajesticParamsRunning )
+   {
+      if ( bManual )
+      {
+         _add_maj_command_to_queue("curl -s localhost/api/v1/set?isp.awb_mode=ct_manual", false);
+         sprintf(szComm, "curl -s localhost/api/v1/set?isp.awb_ct=%u", uWBTempK & 0xFFFF);
+         _add_maj_command_to_queue(szComm, false);
+      }
+      else
+         _add_maj_command_to_queue("curl -s localhost/api/v1/set?isp.awb_mode=auto", false);
+   }
+   else
+   {
+      char szVal[16];
+      if ( bManual )
+      {
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_mode", "ct_manual");
+         _execute_maj_command_wait(szComm);
+         snprintf(szVal, sizeof(szVal), "%u", uWBTempK & 0xFFFF);
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_ct", szVal);
+         _execute_maj_command_wait(szComm);
+      }
+      else
+      {
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_mode", "auto");
+         _execute_maj_command_wait(szComm);
+      }
+   }
+}
+
 void hardware_camera_maj_set_contrast(u32 uValue)
 {
    if ( uValue == s_CurrentMajesticCamSettings.contrast )
