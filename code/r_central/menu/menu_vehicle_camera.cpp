@@ -310,6 +310,7 @@ void MenuVehicleCamera::addItems()
       m_IndexDayNight = addMenuItem(m_pItemsSelect[15]);
    }
 
+   m_IndexWBTemp = -1;
    if ( g_pCurrentModel->isActiveCameraCSICompatible() || g_pCurrentModel->isActiveCameraVeye() )
    {
       m_pItemsSelect[3] = new MenuItemSelect(L("White Balance"));
@@ -322,20 +323,25 @@ void MenuVehicleCamera::addItems()
          m_pItemsSelect[3]->addSelection("Shade");
          m_pItemsSelect[3]->addSelection("Horizont");
          m_pItemsSelect[3]->addSelection("Grey World");
-         m_pItemsSelect[3]->addSelection(L("Manual (Kelvin)")); // index 7, stored as 0xFF sentinel
       }
       m_pItemsSelect[3]->setIsEditable();
       m_pItemsSelect[3]->setMargin(fMargin);
       m_IndexWhiteBalance = addMenuItem(m_pItemsSelect[3]);
+   }
+   else if ( g_pCurrentModel->isActiveCameraOpenIPC() )
+   {
+      // The waybeam/sigmastar ISP supports auto AWB or a color-temperature lock
+      m_pItemsSelect[3] = new MenuItemSelect(L("White Balance"), L("Auto white balance, or lock the white balance to a fixed color temperature."));
+      m_pItemsSelect[3]->addSelection(L("Auto"));
+      m_pItemsSelect[3]->addSelection(L("Manual (Kelvin)"));
+      m_pItemsSelect[3]->setIsEditable();
+      m_pItemsSelect[3]->setMargin(fMargin);
+      m_IndexWhiteBalance = addMenuItem(m_pItemsSelect[3]);
 
-      m_IndexWBTemp = -1;
-      if ( ! g_pCurrentModel->isActiveCameraVeye() )
-      {
-         m_pItemsSlider[9] = new MenuItemSlider(L("WB Temperature (K)"), 2500,8000,5500, fSliderWidth);
-         m_pItemsSlider[9]->setTooltip(L("Color temperature for manual white balance lock, in Kelvin. Only used when White Balance is set to Manual."));
-         m_pItemsSlider[9]->setMargin(fMargin);
-         m_IndexWBTemp = addMenuItem(m_pItemsSlider[9]);
-      }
+      m_pItemsSlider[9] = new MenuItemSlider(L("WB Temperature (K)"), 2500,8000,5500, fSliderWidth);
+      m_pItemsSlider[9]->setTooltip(L("Color temperature for the manual white balance lock, in Kelvin. Only used when White Balance is set to Manual."));
+      m_pItemsSlider[9]->setMargin(fMargin);
+      m_IndexWBTemp = addMenuItem(m_pItemsSlider[9]);
    }
 
    if ( g_pCurrentModel->isActiveCameraVeye327290() )
@@ -660,9 +666,10 @@ void MenuVehicleCamera::updateUIValues()
    if ( (-1 != m_IndexWhiteBalance) && (NULL != m_pItemsSelect[3]) )
    {
       int iWB = (int) g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].whitebalance;
-      if ( 0xFF == iWB )
-         iWB = 7; // Manual (Kelvin) selection
-      m_pItemsSelect[3]->setSelection(iWB);
+      if ( g_pCurrentModel->isActiveCameraOpenIPC() )
+         m_pItemsSelect[3]->setSelection( (0xFF == iWB) ? 1 : 0 ); // Auto / Manual (Kelvin)
+      else
+         m_pItemsSelect[3]->setSelection(iWB);
    }
    if ( (-1 != m_IndexWBTemp) && (NULL != m_pItemsSlider[9]) )
    {
@@ -937,9 +944,10 @@ void MenuVehicleCamera::sendCameraParams(int itemIndex, bool bQuick)
       cparams.profiles[iProfile].exposure = m_pItemsSelect[2]->getSelectedIndex();
 
    if ( m_IndexWhiteBalance != -1 )
-      cparams.profiles[iProfile].whitebalance = m_pItemsSelect[3]->getSelectedIndex();
-      if ( 7 == m_pItemsSelect[3]->getSelectedIndex() ) // Manual (Kelvin)
-         cparams.profiles[iProfile].whitebalance = 0xFF;
+      if ( g_pCurrentModel->isActiveCameraOpenIPC() )
+         cparams.profiles[iProfile].whitebalance = (1 == m_pItemsSelect[3]->getSelectedIndex()) ? 0xFF : 1; // Manual (Kelvin) / Auto
+      else
+         cparams.profiles[iProfile].whitebalance = m_pItemsSelect[3]->getSelectedIndex();
       if ( (-1 != m_IndexWBTemp) && (NULL != m_pItemsSlider[9]) )
          cparams.profiles[iProfile].uDummyCamP = (cparams.profiles[iProfile].uDummyCamP & 0xFFFF0000) | (((u32)m_pItemsSlider[9]->getCurrentValue()) & 0xFFFF);
 
