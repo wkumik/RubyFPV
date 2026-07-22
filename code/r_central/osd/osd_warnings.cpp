@@ -31,6 +31,9 @@
 */
 
 #include <math.h>
+#if defined(RUBY_BUILD_HW_PLATFORM_RADXA)
+#include <cairo/cairo.h>
+#endif
 #include "../../base/base.h"
 #include "../../base/config.h"
 #include "../../base/ctrl_settings.h"
@@ -57,14 +60,15 @@ static bool bHasPITModeWarning = false;
 // the critical level.
 #define OSD_LINK_OUTLINE_QUALITY_WARNING 70.0f
 #define OSD_LINK_OUTLINE_QUALITY_CRITICAL 30.0f
-#define OSD_LINK_OUTLINE_BAND_PERCENT 0.095f
-#define OSD_LINK_OUTLINE_BAND_GROWTH 2.0f
-#define OSD_LINK_OUTLINE_MAX_ALPHA 0.95f
-#define OSD_LINK_OUTLINE_SEVERITY_EXPONENT 2.5f
+#define OSD_LINK_OUTLINE_BAND_PERCENT 0.145f
+#define OSD_LINK_OUTLINE_BAND_GROWTH 1.5f
+#define OSD_LINK_OUTLINE_MAX_ALPHA 0.80f
+#define OSD_LINK_OUTLINE_SEVERITY_EXPONENT 2.4f
+#define OSD_LINK_OUTLINE_FALLOFF_EXPONENT 3.6f
 #define OSD_LINK_OUTLINE_GRADIENT_STEPS 96
-#define OSD_LINK_OUTLINE_CORNER_PERCENT 0.27f
-#define OSD_LINK_OUTLINE_CORNER_STEPS 24
-#define OSD_LINK_OUTLINE_CORNER_STEP_ALPHA 0.05f
+#define OSD_LINK_OUTLINE_CORNER_PERCENT 0.16f
+#define OSD_LINK_OUTLINE_CORNER_STEPS 29
+#define OSD_LINK_OUTLINE_CORNER_STEP_ALPHA 0.065f
 #define OSD_LINK_BLACK_BARS_BAND_PERCENT 0.07f
 #define OSD_LINK_BLACK_BARS_MAX_ALPHA 0.75f
 
@@ -163,69 +167,95 @@ void osd_warnings_render_link_outline()
       // The band also grows inward as the link gets worse
       float fBandH = OSD_LINK_OUTLINE_BAND_PERCENT * (1.0f + OSD_LINK_OUTLINE_BAND_GROWTH*fIntensity);
 
-      // Per-pixel concentric 1px rings: the aspect-corrected band is square in
-      // pixels, so ring i insets exactly i pixels on every side. Coordinates
-      // are pixel-snapped (+0.3/+0.4 guards against float truncation) so rings
-      // tile exactly - no seams, no banding.
-      int iScreenW = g_pRenderEngine->getScreenWidth();
-      int iScreenH = g_pRenderEngine->getScreenHeight();
-      float fW = (float)iScreenW;
-      float fH = (float)iScreenH;
-      int iBandPx = (int)(fBandH * fH);
-      if ( iBandPx > iScreenH/3 )
-         iBandPx = iScreenH/3;
-      for( int i=0; i<iBandPx; i++ )
+#if defined(RUBY_BUILD_HW_PLATFORM_RADXA)
+      // Render with real cairo gradients: pixel-perfect smoothness for both
+      // the edge band and the corner vignette, and much cheaper than manual
+      // per-rect blending (pixman fills the spans in one optimized pass).
+      cairo_t* pCtx = (cairo_t*) g_pRenderEngine->getDrawContext();
+      if ( NULL != pCtx )
       {
-         float fT = 1.0f - (float)i/(float)iBandPx;
-         float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fIntensity * fT * fT;
-         // The output surface holds premultiplied alpha (cairo ARGB32 convention),
-         // so scale the color by the alpha or the edge renders overbright
-         g_pRenderEngine->setFill(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
-         g_pRenderEngine->setStroke(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
+         int iScreenW = g_pRenderEngine->getScreenWidth();
+         int iScreenH = g_pRenderEngine->getScreenHeight();
+         int iBandPx = (int)(fBandH * (float)iScreenH);
+         if ( iBandPx > iScreenH/3 )
+            iBandPx = iScreenH/3;
+         double dG = (double)fGreen/255.0;
+         double dMaxA = (double)(OSD_LINK_OUTLINE_MAX_ALPHA * fIntensity);
 
-         float fX = ((float)i + 0.3f)/fW;
-         float fY = ((float)i + 0.3f)/fH;
-         float f1pxW = 1.4f/fW;
-         float f1pxH = 1.4f/fH;
-         float fRowW = ((float)(iScreenW - 2*i) + 0.4f)/fW;
-         float fColH = ((float)(iScreenH - 2*i - 2) + 0.4f)/fH;
-         // top and bottom 1px rows
-         g_pRenderEngine->drawRect(fX, fY, fRowW, f1pxH);
-         g_pRenderEngine->drawRect(fX, ((float)(iScreenH - i - 1) + 0.3f)/fH, fRowW, f1pxH);
-         // left and right 1px columns between the rows
-         g_pRenderEngine->drawRect(fX, ((float)(i + 1) + 0.3f)/fH, f1pxW, fColH);
-         g_pRenderEngine->drawRect(((float)(iScreenW - i - 1) + 0.3f)/fW, ((float)(i + 1) + 0.3f)/fH, f1pxW, fColH);
+         cairo_save(pCtx);
+         cairo_set_operator(pCtx, CAIRO_OPERATOR_OVER);
+
+         // Four overlapping edge gradients; where two overlap (near corners)
+         // the OVER blend compounds them, which already deepens the corners.
+         // Extra stops near 0 keep fidelity for high falloff exponents.
+         static const double s_dStops[7] = {0.0, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0};
+         for( int iEdge=0; iEdge<4; iEdge++ )
+         {
+            cairo_pattern_t* pPat = NULL;
+            switch ( iEdge )
+            {
+               case 0: pPat = cairo_pattern_create_linear(0, 0, 0, iBandPx); break;
+               case 1: pPat = cairo_pattern_create_linear(0, iScreenH, 0, iScreenH - iBandPx); break;
+               case 2: pPat = cairo_pattern_create_linear(0, 0, iBandPx, 0); break;
+               default: pPat = cairo_pattern_create_linear(iScreenW, 0, iScreenW - iBandPx, 0); break;
+            }
+            for( int s=0; s<7; s++ )
+            {
+               double dT = 1.0 - s_dStops[s];
+               cairo_pattern_add_color_stop_rgba(pPat, s_dStops[s], 1.0, dG, 0.0, dMaxA*pow(dT, (double)OSD_LINK_OUTLINE_FALLOFF_EXPONENT));
+            }
+            cairo_set_source(pCtx, pPat);
+            switch ( iEdge )
+            {
+               case 0: cairo_rectangle(pCtx, 0, 0, iScreenW, iBandPx); break;
+               case 1: cairo_rectangle(pCtx, 0, iScreenH - iBandPx, iScreenW, iBandPx); break;
+               case 2: cairo_rectangle(pCtx, 0, 0, iBandPx, iScreenH); break;
+               default: cairo_rectangle(pCtx, iScreenW - iBandPx, 0, iBandPx, iScreenH); break;
+            }
+            cairo_fill(pCtx);
+            cairo_pattern_destroy(pPat);
+         }
+
+         // Radial corner vignette on top, one gradient per corner
+         int iCornPx = (int)(OSD_LINK_OUTLINE_CORNER_PERCENT * (float)iScreenH);
+         // Equivalent peak opacity of the old N-layer accumulation
+         double dCornA = (1.0 - pow(1.0 - (double)OSD_LINK_OUTLINE_CORNER_STEP_ALPHA, (double)OSD_LINK_OUTLINE_CORNER_STEPS)) * (double)fIntensity;
+         for( int iC=0; iC<4; iC++ )
+         {
+            double dCx = (iC & 1) ? (double)iScreenW : 0.0;
+            double dCy = (iC & 2) ? (double)iScreenH : 0.0;
+            cairo_pattern_t* pPat = cairo_pattern_create_radial(dCx, dCy, 0, dCx, dCy, iCornPx);
+            for( int s=0; s<7; s++ )
+            {
+               double dT = 1.0 - s_dStops[s];
+               cairo_pattern_add_color_stop_rgba(pPat, s_dStops[s], 1.0, dG, 0.0, dCornA*dT*dT);
+            }
+            cairo_set_source(pCtx, pPat);
+            cairo_rectangle(pCtx, (iC & 1) ? (iScreenW - iCornPx) : 0, (iC & 2) ? (iScreenH - iCornPx) : 0, iCornPx, iCornPx);
+            cairo_fill(pCtx);
+            cairo_pattern_destroy(pPat);
+         }
+         cairo_restore(pCtx);
       }
-
-      // Corner vignette: nested corner squares whose blended overlap deepens
-      // the color diagonally toward each corner for a natural vignette feel
-      float fCornH = OSD_LINK_OUTLINE_CORNER_PERCENT;
-      float fCornW = fCornH / g_pRenderEngine->getAspectRatio();
-      for( int iStep=0; iStep<OSD_LINK_OUTLINE_CORNER_STEPS; iStep++ )
+#else
+      // Non-cairo platforms: stepped rect rings (coarser but portable)
+      float fBandW = fBandH / g_pRenderEngine->getAspectRatio();
+      float fStepH = fBandH / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+      float fStepW = fBandW / (float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+      for( int iStep=0; iStep<OSD_LINK_OUTLINE_GRADIENT_STEPS; iStep++ )
       {
-         float fScale = 1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_CORNER_STEPS;
-         float fAlpha = OSD_LINK_OUTLINE_CORNER_STEP_ALPHA * fIntensity;
-         // The first (largest) square can land on untouched pixels, which are
-         // stored as-given and must be premultiplied. The inner squares blend
-         // over already-drawn pixels; that blend path multiplies the color by
-         // alpha itself, so they must pass straight color.
-         if ( 0 == iStep )
-         {
-            g_pRenderEngine->setFill(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
-            g_pRenderEngine->setStroke(255.0f*fAlpha, fGreen*fAlpha, 0.0f, fAlpha);
-         }
-         else
-         {
-            g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
-            g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
-         }
-         float sW = fCornW * fScale;
-         float sH = fCornH * fScale;
-         g_pRenderEngine->drawRect(0.0f, 0.0f, sW, sH);
-         g_pRenderEngine->drawRect(1.0f - sW, 0.0f, sW, sH);
-         g_pRenderEngine->drawRect(0.0f, 1.0f - sH, sW, sH);
-         g_pRenderEngine->drawRect(1.0f - sW, 1.0f - sH, sW, sH);
+         float fT = 1.0f - (float)iStep/(float)OSD_LINK_OUTLINE_GRADIENT_STEPS;
+         float fAlpha = OSD_LINK_OUTLINE_MAX_ALPHA * fIntensity * powf(fT, OSD_LINK_OUTLINE_FALLOFF_EXPONENT);
+         g_pRenderEngine->setFill(255.0f, fGreen, 0.0f, fAlpha);
+         g_pRenderEngine->setStroke(255.0f, fGreen, 0.0f, fAlpha);
+         float xOut = fStepW * (float)iStep;
+         float yOut = fStepH * (float)iStep;
+         g_pRenderEngine->drawRect(xOut, yOut, 1.0f - 2.0f*xOut, fStepH);
+         g_pRenderEngine->drawRect(xOut, 1.0f - yOut - fStepH, 1.0f - 2.0f*xOut, fStepH);
+         g_pRenderEngine->drawRect(xOut, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
+         g_pRenderEngine->drawRect(1.0f - xOut - fStepW, yOut + fStepH, fStepW, 1.0f - 2.0f*(yOut + fStepH));
       }
+#endif
    }
    g_pRenderEngine->setAlphaBlendingEnabled(bWasBlending);
    osd_set_colors();

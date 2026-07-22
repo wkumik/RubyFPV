@@ -322,10 +322,20 @@ void MenuVehicleCamera::addItems()
          m_pItemsSelect[3]->addSelection("Shade");
          m_pItemsSelect[3]->addSelection("Horizont");
          m_pItemsSelect[3]->addSelection("Grey World");
+         m_pItemsSelect[3]->addSelection(L("Manual (Kelvin)")); // index 7, stored as 0xFF sentinel
       }
       m_pItemsSelect[3]->setIsEditable();
       m_pItemsSelect[3]->setMargin(fMargin);
       m_IndexWhiteBalance = addMenuItem(m_pItemsSelect[3]);
+
+      m_IndexWBTemp = -1;
+      if ( ! g_pCurrentModel->isActiveCameraVeye() )
+      {
+         m_pItemsSlider[9] = new MenuItemSlider(L("WB Temperature (K)"), 2500,8000,5500, fSliderWidth);
+         m_pItemsSlider[9]->setTooltip(L("Color temperature for manual white balance lock, in Kelvin. Only used when White Balance is set to Manual."));
+         m_pItemsSlider[9]->setMargin(fMargin);
+         m_IndexWBTemp = addMenuItem(m_pItemsSlider[9]);
+      }
    }
 
    if ( g_pCurrentModel->isActiveCameraVeye327290() )
@@ -648,7 +658,20 @@ void MenuVehicleCamera::updateUIValues()
          m_pItemsSelect[22]->setSelectedIndex(1);
    }
    if ( (-1 != m_IndexWhiteBalance) && (NULL != m_pItemsSelect[3]) )
-      m_pItemsSelect[3]->setSelection(g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].whitebalance);
+   {
+      int iWB = (int) g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].whitebalance;
+      if ( 0xFF == iWB )
+         iWB = 7; // Manual (Kelvin) selection
+      m_pItemsSelect[3]->setSelection(iWB);
+   }
+   if ( (-1 != m_IndexWBTemp) && (NULL != m_pItemsSlider[9]) )
+   {
+      int iTempK = (int)(g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].uDummyCamP & 0xFFFF);
+      if ( (iTempK < 2500) || (iTempK > 8000) )
+         iTempK = 5500;
+      m_pItemsSlider[9]->setCurrentValue(iTempK);
+      m_pItemsSlider[9]->setEnabled( 0xFF == g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].whitebalance );
+   }
 
    if ( (-1 != m_IndexWDR) && (NULL != m_pItemsSelect[14]) )
       m_pItemsSelect[14]->setSelection((int)g_pCurrentModel->camera_params[g_pCurrentModel->iCurrentCamera].profiles[iCameraProfileIndex].wdr);
@@ -915,6 +938,10 @@ void MenuVehicleCamera::sendCameraParams(int itemIndex, bool bQuick)
 
    if ( m_IndexWhiteBalance != -1 )
       cparams.profiles[iProfile].whitebalance = m_pItemsSelect[3]->getSelectedIndex();
+      if ( 7 == m_pItemsSelect[3]->getSelectedIndex() ) // Manual (Kelvin)
+         cparams.profiles[iProfile].whitebalance = 0xFF;
+      if ( (-1 != m_IndexWBTemp) && (NULL != m_pItemsSlider[9]) )
+         cparams.profiles[iProfile].uDummyCamP = (cparams.profiles[iProfile].uDummyCamP & 0xFFFF0000) | (((u32)m_pItemsSlider[9]->getCurrentValue()) & 0xFFFF);
 
    if ( (m_IndexAGC != -1) && (m_pItemsSlider[7] != NULL) )
    {
@@ -1626,6 +1653,9 @@ void MenuVehicleCamera::onSelectItem()
       sendCameraParams(-1, false);
 
    if ( m_IndexWhiteBalance == m_SelectedIndex )
+      sendCameraParams(-1, false);
+
+   if ( (-1 != m_IndexWBTemp) && (m_IndexWBTemp == m_SelectedIndex) )
       sendCameraParams(-1, false);
 
    if ( g_pCurrentModel->isActiveCameraVeye327290() )

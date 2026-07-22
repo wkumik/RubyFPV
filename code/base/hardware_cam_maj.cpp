@@ -652,6 +652,27 @@ void _hardware_camera_maj_apply_image_settings()
    hwcam_be_format_cli_set(szComm, sizeof(szComm), ".image.hue", szVal, false);
    _execute_maj_command_wait(szComm);
 
+   // Waybeam supports a manual white balance lock via a color-temperature
+   // (isp.awb_mode=ct_manual + isp.awb_ct in Kelvin). whitebalance 0xFF is
+   // the Manual sentinel; the Kelvin value lives in uDummyCamP low 16 bits.
+   if ( hwcam_be_get() == HWCAM_BE_WAYBEAM )
+   {
+      u32 uWBTempK = s_CurrentMajesticCamSettings.uDummyCamP & 0xFFFF;
+      if ( (0xFF == s_CurrentMajesticCamSettings.whitebalance) && (uWBTempK >= 2500) && (uWBTempK <= 8000) )
+      {
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_mode", "ct_manual");
+         _execute_maj_command_wait(szComm);
+         snprintf(szVal, sizeof(szVal), "%u", uWBTempK);
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_ct", szVal);
+         _execute_maj_command_wait(szComm);
+      }
+      else
+      {
+         hwcam_be_format_http_set(szComm, sizeof(szComm), "isp.awb_mode", "auto");
+         _execute_maj_command_wait(szComm);
+      }
+   }
+
    // waybeam has no .fpv.enabled field (its FPV tuning is .fpv.roiEnabled etc);
    // skip this majestic-only flag on waybeam.
    if ( hwcam_be_get() != HWCAM_BE_WAYBEAM )

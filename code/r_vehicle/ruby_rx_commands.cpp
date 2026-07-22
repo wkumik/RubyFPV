@@ -979,12 +979,25 @@ bool process_command(u8* pBuffer, int length)
          char szOutput[1024];
          hw_execute_bash_command("mkdir -p /mnt/mmcblk0p1/ruby", NULL);
          hw_execute_bash_command(hwcam_be_record_start_cmd(), NULL);
-         hardware_sleep_ms(100);
-         szOutput[0] = 0;
-         hw_execute_bash_command_raw(hwcam_be_record_status_cmd(), szOutput);
-         if ( NULL == strstr(szOutput, "\"active\":true") )
+         // The encoder starts the recorder asynchronously; the very first
+         // recording also creates the file/segment structure, which takes a
+         // few hundred ms. Poll instead of a single instant check or the
+         // first record after boot gets falsely reported as failed.
+         bool bRecordingActive = false;
+         for( int iTry=0; iTry<8; iTry++ )
          {
-            log_softerror_and_alarm("Onboard recording failed to start. Encoder status: [%s]", szOutput);
+            hardware_sleep_ms(100);
+            szOutput[0] = 0;
+            hw_execute_bash_command_raw(hwcam_be_record_status_cmd(), szOutput);
+            if ( NULL != strstr(szOutput, "\"active\":true") )
+            {
+               bRecordingActive = true;
+               break;
+            }
+         }
+         if ( ! bRecordingActive )
+         {
+            log_softerror_and_alarm("Onboard recording failed to start after 800ms. Encoder status: [%s]", szOutput);
             sendCommandReply(COMMAND_RESPONSE_FLAGS_FAILED, 0, 0);
             return true;
          }
