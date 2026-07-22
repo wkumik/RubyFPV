@@ -372,6 +372,13 @@ MenuVehicleOSDElements::MenuVehicleOSDElements(void)
    m_pItemsSelect[23]->setIsEditable();
    m_IndexSignalBarsPosition = addMenuItem(m_pItemsSelect[23]);
 
+   m_pItemsSelect[37] = new MenuItemSelect(L("Link warning outline"), L("Shows a colored outline around the edges of the screen when the radio link quality gets poor. It fades from yellow to red as the link degrades."));
+   m_pItemsSelect[37]->addSelection(L("No"));
+   m_pItemsSelect[37]->addSelection(L("Yes"));
+   if ( bUseMultiSelection )
+      m_pItemsSelect[37]->setUseMultiViewLayout();
+   m_IndexLinkWarningOutline = addMenuItem(m_pItemsSelect[37]);
+
    m_IndexHIDOSD = -1;
    if ( g_pCurrentModel->telemetry_params.fc_telemetry_type != TELEMETRY_TYPE_MSP )
    {
@@ -559,6 +566,8 @@ void MenuVehicleOSDElements::valuesToUI()
       m_pItemsSelect[23]->setEnabled(true);
    else
       m_pItemsSelect[23]->setEnabled(false);
+
+   m_pItemsSelect[37]->setSelectedIndex((g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE)?1:0);
 
    if ( -1 != m_IndexHIDOSD )
       m_pItemsSelect[24]->setSelectedIndex((g_pCurrentModel->osd_params.osd_flags[iScreenIndex] & OSD_FLAG_SHOW_HID_IN_OSD)?1:0);
@@ -1142,6 +1151,16 @@ void MenuVehicleOSDElements::onSelectItem()
       int index = m_pItemsSelect[23]->getSelectedIndex();
       params.osd_flags[iScreenIndex] &= ~OSD_FLAG_SIGNAL_BARS_MASK;
       params.osd_flags[iScreenIndex] |= (index<<14);
+      params.osd_layout_preset[iScreenIndex] = OSD_PRESET_CUSTOM;
+      sendToVehicle = true;
+   }
+
+   if ( m_IndexLinkWarningOutline == m_SelectedIndex )
+   {
+      if ( 0 == m_pItemsSelect[37]->getSelectedIndex() )
+         params.osd_flags3[iScreenIndex] &= ~OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
+      else
+         params.osd_flags3[iScreenIndex] |= OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
       params.osd_layout_preset[iScreenIndex] = OSD_PRESET_CUSTOM;
       sendToVehicle = true;
    }

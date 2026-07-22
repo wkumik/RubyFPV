@@ -105,6 +105,7 @@ void MenuVehicleVideoEncodings::addItems()
 
    m_IndexVideoBitrate = -1;
    m_IndexFocusMode = -1;
+   m_IndexLinkWarningHalo = -1;
    m_IndexNoise = -1;
 
    if ( m_bShowVideo )
@@ -124,13 +125,18 @@ void MenuVehicleVideoEncodings::addItems()
       m_pMenuItemVideoWarning->setHidden(true);
       addMenuItem(m_pMenuItemVideoWarning);
 
-      m_pItemsSelect[21] = new MenuItemSelect(L("Focus Mode Type"), L("Sets the way focus mode is working and how it's highlighted in the video.")); 
+      m_pItemsSelect[21] = new MenuItemSelect(L("Focus Mode Type"), L("Sets the way focus mode is working and how it's highlighted in the video."));
       m_pItemsSelect[21]->addSelection(L("Auto"));
       m_pItemsSelect[21]->addSelection(L("Black & White"));
       m_pItemsSelect[21]->addSelection(L("Bars"));
       m_pItemsSelect[21]->addSelection(L("Both"));
       m_pItemsSelect[21]->setIsEditable();
       m_IndexFocusMode = addMenuItem(m_pItemsSelect[21]);
+
+      m_pItemsSelect[26] = new MenuItemSelect(L("Poor Link Warning Halo"), L("Shows a warning outline around the edges of the screen when the radio link quality gets poor. It fades from yellow to red as the link degrades. Applies to all OSD screens."));
+      m_pItemsSelect[26]->addSelection(L("No"));
+      m_pItemsSelect[26]->addSelection(L("Yes"));
+      m_IndexLinkWarningHalo = addMenuItem(m_pItemsSelect[26]);
 
       if ( g_pCurrentModel->isRunningOnOpenIPCHardware() )
       {
@@ -513,6 +519,9 @@ void MenuVehicleVideoEncodings::valuesToUI()
       else
          m_pItemsSelect[21]->setSelectedIndex(0);
    }
+
+   if ( -1 != m_IndexLinkWarningHalo )
+      m_pItemsSelect[26]->setSelectedIndex((g_pCurrentModel->osd_params.osd_flags3[g_pCurrentModel->osd_params.iCurrentOSDScreen] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE)?1:0);
 
    if ( -1 != m_IndexH264Profile )
       m_pItemsSelect[4]->setSelectedIndex((g_pCurrentModel->video_params.uVideoExtraFlags & VIDEO_FLAG_ENABLE_LOCAL_HDMI_OUTPUT)?1:0);
@@ -955,6 +964,28 @@ void MenuVehicleVideoEncodings::onSelectItem()
    if ( ((-1 != m_IndexNoise) && (m_IndexNoise == m_SelectedIndex)) ||
         ((-1 != m_IndexFocusMode) && (m_IndexFocusMode == m_SelectedIndex)) )
       sendVideoParams();
+
+   if ( (-1 != m_IndexLinkWarningHalo) && (m_IndexLinkWarningHalo == m_SelectedIndex) )
+   {
+      osd_parameters_t params;
+      memcpy(&params, &(g_pCurrentModel->osd_params), sizeof(osd_parameters_t));
+      for( int i=0; i<MODEL_MAX_OSD_SCREENS; i++ )
+      {
+         if ( 0 == m_pItemsSelect[26]->getSelectedIndex() )
+            params.osd_flags3[i] &= ~OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
+         else
+            params.osd_flags3[i] |= OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE;
+      }
+      if ( g_pCurrentModel->is_spectator )
+      {
+         memcpy(&(g_pCurrentModel->osd_params), &params, sizeof(osd_parameters_t));
+         saveControllerModel(g_pCurrentModel);
+         valuesToUI();
+      }
+      else if ( ! handle_commands_send_to_vehicle(COMMAND_ID_SET_OSD_PARAMS, 0, (u8*)&params, sizeof(osd_parameters_t)) )
+         valuesToUI();
+      return;
+   }
 
    if ( (-1 != m_IndexVideoBitrate) && (m_IndexVideoBitrate == m_SelectedIndex) )
    {
