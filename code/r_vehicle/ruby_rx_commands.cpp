@@ -1028,6 +1028,16 @@ bool process_command(u8* pBuffer, int length)
       return true;
    }
 
+   if ( uCommandType == COMMAND_ID_ENTER_PHONE_TRANSFER_MODE )
+   {
+      // Reply OK BEFORE reconfiguring the radio — ap_mode.sh stops the FPV
+      // radio (S73ruby) + waybeam, so the link drops and no later reply
+      // could reach the GS. Run the script backgrounded.
+      sendCommandReply(COMMAND_RESPONSE_FLAGS_OK, 0, 0);
+      hw_execute_bash_command("/usr/bin/ap_mode.sh start &", NULL);
+      return true;
+   }
+
    if ( uCommandType == COMMAND_ID_SET_RELAY_PARAMETERS )
    {
       if ( iParamsLength != sizeof(type_relay_parameters) )

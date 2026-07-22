@@ -390,7 +390,7 @@ int load_ControllerSettings()
       s_CtrlSettings.iRecordingTarget = 0;
       s_CtrlSettings.iOnboardRecordingQuality = 1;
    }
-   if ( (s_CtrlSettings.iRecordingTarget < 0) || (s_CtrlSettings.iRecordingTarget > 1) )
+   if ( (s_CtrlSettings.iRecordingTarget < 0) || (s_CtrlSettings.iRecordingTarget > 2) )
       s_CtrlSettings.iRecordingTarget = 0;
    if ( (s_CtrlSettings.iOnboardRecordingQuality < 0) || (s_CtrlSettings.iOnboardRecordingQuality > 3) )
       s_CtrlSettings.iOnboardRecordingQuality = 1;

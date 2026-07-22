@@ -981,18 +981,26 @@ int ruby_start_recording()
    if ( g_bIsVideoRecording )
        return -1;
 
-   // Onboard SD recording (waybeam): forward start to the vehicle instead of
-   // the GS DVR. Recording state is set when the vehicle confirms the command.
+   // Recording target: 0 = ground DVR, 1 = onboard SD (waybeam), 2 = both.
+   // Onboard start is forwarded to the vehicle; for "both" we also fall through to
+   // the GS DVR below. Onboard recording state is set when the vehicle confirms.
    ControllerSettings* pCSRec = get_ControllerSettings();
-   if ( (NULL != pCSRec) && (1 == pCSRec->iRecordingTarget) )
+   int iRecTarget = (NULL != pCSRec) ? pCSRec->iRecordingTarget : 0;
+   bool bRecGround = (iRecTarget == 0) || (iRecTarget == 2);
+   if ( (iRecTarget == 1) || (iRecTarget == 2) )
    {
       if ( vehicle_backend_is_waybeam(g_pCurrentModel->uVehicleId) )
       {
          handle_commands_send_to_vehicle(COMMAND_ID_ONBOARD_RECORD, 1, NULL, 0);
          log_line("Sent onboard recording start command to vehicle.");
-         return 0;
+         if ( ! bRecGround )
+            return 0;
       }
-      warnings_add(0, L("Onboard recording requires the waybeam encoder. Recording on the ground instead."), g_idIconCamera, get_Color_IconWarning(), 6);
+      else
+      {
+         warnings_add(0, L("Onboard recording requires the waybeam encoder. Recording on the ground instead."), g_idIconCamera, get_Color_IconWarning(), 6);
+         bRecGround = true;
+      }
    }
 
    #ifdef HW_PLATFORM_RASPBERRY
@@ -1062,12 +1070,14 @@ int ruby_stop_recording()
    // blocks changing the recording target while a recording is active, so the
    // current setting always matches the recording in progress.
    ControllerSettings* pCSRec = get_ControllerSettings();
-   if ( (NULL != pCSRec) && (1 == pCSRec->iRecordingTarget) )
-   if ( vehicle_backend_is_waybeam(g_pCurrentModel->uVehicleId) )
+   int iRecTarget = (NULL != pCSRec) ? pCSRec->iRecordingTarget : 0;
+   bool bRecGround = (iRecTarget == 0) || (iRecTarget == 2);
+   if ( ((iRecTarget == 1) || (iRecTarget == 2)) && vehicle_backend_is_waybeam(g_pCurrentModel->uVehicleId) )
    {
       handle_commands_send_to_vehicle(COMMAND_ID_ONBOARD_RECORD, 0, NULL, 0);
       log_line("Sent onboard recording stop command to vehicle.");
-      return 0;
+      if ( ! bRecGround )
+         return 0;
    }
 
    u8 uCmd = 0;

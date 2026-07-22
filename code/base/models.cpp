@@ -2744,6 +2744,10 @@ void Model::resetVideoParamsToDefaults()
    video_params.lowestAllowedAdaptiveVideoBitrate = DEFAULT_LOWEST_ALLOWED_ADAPTIVE_VIDEO_BITRATE;
    video_params.uMaxAutoKeyframeIntervalMs = DEFAULT_VIDEO_MAX_AUTO_KEYFRAME_INTERVAL;
    video_params.uVideoExtraFlags = VIDEO_FLAG_ENABLE_FOCUS_MODE_BW | VIDEO_FLAG_ENABLE_FOCUS_MODE_BARS;
+   // SigmaStar (SSC338Q) vehicles run waybeam_venc, whose codec is hardcoded H.265 — a fresh
+   // model must default to H.265 so the GS loads the matching decoder (h264 default => black screen).
+   if ( hardware_board_is_sigmastar(hardware_getBoardType()) )
+      video_params.uVideoExtraFlags |= VIDEO_FLAG_GENERATE_H265;
    resetVideoLinkProfiles();
 }
 

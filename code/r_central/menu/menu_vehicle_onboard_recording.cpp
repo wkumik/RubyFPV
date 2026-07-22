@@ -41,9 +41,10 @@ MenuVehicleOnboardRecording::MenuVehicleOnboardRecording(void)
    m_yPos = 0.16;
    m_bBackendSupported = false;
 
-   m_pItemsSelect[0] = new MenuItemSelect(L("Recording Target"), L("Where the video is saved when you press the record button. Ground = laptop/goggles SD (classic Ruby). Onboard SD = drone's micro SD card (waybeam only)."));
+   m_pItemsSelect[0] = new MenuItemSelect(L("Recording Target"), L("Where the video is saved when you press the record button. Ground = laptop/goggles SD (classic Ruby). Onboard SD = drone's micro SD card (waybeam only). Both = record on the ground AND on the drone SD at the same time."));
    m_pItemsSelect[0]->addSelection(L("Ground"));
    m_pItemsSelect[0]->addSelection(L("Onboard SD"));
+   m_pItemsSelect[0]->addSelection(L("Both"));
    m_pItemsSelect[0]->setIsEditable();
    m_IndexTarget = addMenuItem(m_pItemsSelect[0]);
 
@@ -105,7 +106,7 @@ void MenuVehicleOnboardRecording::valuesToUI()
       return;
 
    int iTarget = pCS->iRecordingTarget;
-   if ( iTarget < 0 || iTarget > 1 ) iTarget = 0;
+   if ( iTarget < 0 || iTarget > 2 ) iTarget = 0;
    int iQuality = pCS->iOnboardRecordingQuality;
    if ( iQuality < 0 || iQuality > 3 ) iQuality = 1;
 
@@ -113,7 +114,8 @@ void MenuVehicleOnboardRecording::valuesToUI()
    m_pItemsSelect[1]->setSelection(iQuality);
 
    m_pItemsSelect[0]->setEnabled(m_bBackendSupported);
-   m_pItemsSelect[1]->setEnabled(m_bBackendSupported && (iTarget == 1));
+   // Quality applies to the onboard SD stream — relevant for Onboard (1) and Both (2).
+   m_pItemsSelect[1]->setEnabled(m_bBackendSupported && (iTarget >= 1));
 }
 
 void MenuVehicleOnboardRecording::_pushSettingsToVehicle()
@@ -126,7 +128,8 @@ void MenuVehicleOnboardRecording::_pushSettingsToVehicle()
 
    command_packet_onboard_recording params;
    memset(&params, 0, sizeof(params));
-   params.uTarget = (u8)((pCS->iRecordingTarget == 1) ? 1 : 0);
+   // Drone records onboard for both Onboard (1) and Both (2); only Ground (0) skips it.
+   params.uTarget = (u8)((pCS->iRecordingTarget >= 1) ? 1 : 0);
    int iQ = pCS->iOnboardRecordingQuality;
    if ( iQ < 0 || iQ > 3 ) iQ = 1;
    params.uQualityIdx = (u8)iQ;
@@ -162,6 +165,8 @@ void MenuVehicleOnboardRecording::onSelectItem()
          pCS->iRecordingTarget = iNew;
          save_ControllerSettings();
          _pushSettingsToVehicle();
+         if ( iNew == 2 )
+            addMessage(L("Recording to Both: the drone's SD card fills about twice as fast as Ground-only."));
       }
       valuesToUI();
       return;
@@ -174,9 +179,9 @@ void MenuVehicleOnboardRecording::onSelectItem()
       {
          pCS->iOnboardRecordingQuality = iNew;
          save_ControllerSettings();
-         // Push to vehicle only if onboard is currently active; otherwise it's
-         // stored locally and applied on next toggle to Onboard.
-         if ( pCS->iRecordingTarget == 1 )
+         // Push to vehicle only if onboard recording is part of the current target
+         // (Onboard or Both); otherwise stored locally, applied on next toggle.
+         if ( pCS->iRecordingTarget >= 1 )
             _pushSettingsToVehicle();
       }
       valuesToUI();

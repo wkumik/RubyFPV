@@ -2280,7 +2280,15 @@ void handle_commands_on_response_received(u8* pPacketBuffer, int iLength)
          s_bHasCommandInProgress = false;
          return;
       }
-      if ( ! g_bUpdateInProgress )
+      // A best-effort video-backend probe (214) that an older vehicle firmware does
+      // not recognize is benign - the GS falls back to a heuristic - so don't alarm
+      // the user with an error popup/log for it (it auto-fires on link recover and
+      // around onboard recording, where the "not understood" popup was spurious).
+      bool bSilentUnknownProbe =
+         ( (pPHCR->command_response_flags & COMMAND_RESPONSE_FLAGS_UNKNOWN_COMMAND) &&
+           (pPHCR->origin_command_type == COMMAND_ID_GET_VIDEO_BACKEND) );
+
+      if ( (! g_bUpdateInProgress) && (! bSilentUnknownProbe) )
       {
          Popup* p = NULL;
          if ( pPHCR->command_response_flags & COMMAND_RESPONSE_FLAGS_FAILED_INVALID_PARAMS )

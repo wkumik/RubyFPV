@@ -98,7 +98,7 @@ typedef struct
    int iRecordSTRVoltage;
    int iRecordSTRBitrate;
 
-   int iRecordingTarget; // 0 - ground (classic DVR), 1 - onboard SD (waybeam only)
+   int iRecordingTarget; // 0 - ground (classic DVR), 1 - onboard SD (waybeam only), 2 - both
    int iOnboardRecordingQuality; // 0..3 quality preset index (8/16/25/40 Mbps)
 } ControllerSettings;
 
