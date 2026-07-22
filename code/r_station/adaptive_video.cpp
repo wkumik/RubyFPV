@@ -650,10 +650,10 @@ void _adaptive_video_compute_metrics(Model* pModel, type_global_state_vehicle_ru
 
        for( int k=0; k<hardware_get_radio_interfaces_count(); k++ )
        {
-          if ( g_SMControllerRTInfo.uRxVideoPackets[iRTInfoIndex][k] ||
-               g_SMControllerRTInfo.uRxVideoECPackets[iRTInfoIndex][k] ||
-               g_SMControllerRTInfo.uRxDataPackets[iRTInfoIndex][k] ||
-               g_SMControllerRTInfo.uRxHighPriorityPackets[iRTInfoIndex][k] ||
+          if ( g_SMControllerRTInfo.uRxVideoPackets[iRTInfoIndex] ||
+               g_SMControllerRTInfo.uRxVideoECPackets[iRTInfoIndex] ||
+               g_SMControllerRTInfo.uRxDataPackets[iRTInfoIndex] ||
+               g_SMControllerRTInfo.uRxHighPriorityPackets[iRTInfoIndex] ||
                g_SMControllerRTInfo.uRxMissingPackets[iRTInfoIndex][k] )
           {
              s_iAdaptiveMetric_IntervalsWithAnyRadioData++;
