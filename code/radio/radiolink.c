@@ -981,6 +981,14 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
    int iAntennaDBM[MAX_RADIO_ANTENNAS];
    int iAntennaDBMNoise[MAX_RADIO_ANTENNAS];
    int iAntennaRate = 0;
+   // Signal and noise are indexed independently of the ANTENNA marker: drivers emit
+   // ANTSIGNAL/ANTNOISE per antenna in the extended radiotap namespaces, and the ANTENNA
+   // field does not reliably delimit them (it also appears in the main header). Pairing on
+   // the ANTENNA counter left signal and noise at different indexes, so the
+   // "both present for the same index" test below never passed and SNR was never computed.
+   // The Nth signal now pairs with the Nth noise, which is the actual on-air layout.
+   int iSignalIndex = 0;
+   int iNoiseIndex = 0;
 
    for( int i=0; i<MAX_RADIO_ANTENNAS; i++ )
    {
@@ -1016,7 +1024,11 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
 	
          case IEEE80211_RADIOTAP_ANTENNA:
             //pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.nAntenna = (*rti.this_arg) + 1;
-            iAntennaCount++;
+            // Clamp: this counter is driver/over-the-air controlled. A radiotap header with
+            // more ANTENNA fields than MAX_RADIO_ANTENNAS used to run it past the end of the
+            // iAntennaDBM/iAntennaDBMNoise stack arrays.
+            if ( iAntennaCount < MAX_RADIO_ANTENNAS-1 )
+               iAntennaCount++;
             break;
 		
          case IEEE80211_RADIOTAP_FLAGS:
@@ -1028,11 +1040,13 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
              {
                 idBm = *((int8_t*)(rti.this_arg));
                 if ( idBm < 10 )
+                if ( iSignalIndex < MAX_RADIO_ANTENNAS )
                 {
-                   if ( iAntennaDBM[iAntennaCount] > 500 )
-                      iAntennaDBM[iAntennaCount] = idBm;
-                   else if ( idBm > iAntennaDBM[iAntennaCount] )
-                      iAntennaDBM[iAntennaCount] = idBm;
+                   if ( iAntennaDBM[iSignalIndex] > 500 )
+                      iAntennaDBM[iSignalIndex] = idBm;
+                   else if ( idBm > iAntennaDBM[iSignalIndex] )
+                      iAntennaDBM[iSignalIndex] = idBm;
+                   iSignalIndex++;
                 }
                 break;
              }
@@ -1041,11 +1055,13 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
              {
                 idBm = *((int8_t*)(rti.this_arg));
                 if ( idBm < 0 )
+                if ( iNoiseIndex < MAX_RADIO_ANTENNAS )
                 {
-                   if ( iAntennaDBMNoise[iAntennaCount] > 500 )
-                      iAntennaDBMNoise[iAntennaCount] = idBm;
-                   if ( idBm < iAntennaDBMNoise[iAntennaCount] )
-                      iAntennaDBMNoise[iAntennaCount] = idBm;
+                   if ( iAntennaDBMNoise[iNoiseIndex] > 500 )
+                      iAntennaDBMNoise[iNoiseIndex] = idBm;
+                   if ( idBm < iAntennaDBMNoise[iNoiseIndex] )
+                      iAntennaDBMNoise[iNoiseIndex] = idBm;
+                   iNoiseIndex++;
                 }
                 break;
              }
@@ -1095,7 +1111,13 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
 
       static int siDBGCountRx = 0;
       siDBGCountRx++;
-      for( int i=0; i<iAntennaCount; i++ )
+      // Iterate over the signal/noise entries actually collected, not the ANTENNA-marker
+      // count: a header can carry signal/noise with no ANTENNA field at all, in which case
+      // the old bound was 0 and every reading was silently discarded.
+      int iEntriesCount = (iSignalIndex > iNoiseIndex) ? iSignalIndex : iNoiseIndex;
+      if ( iEntriesCount > MAX_RADIO_ANTENNAS )
+         iEntriesCount = MAX_RADIO_ANTENNAS;
+      for( int i=0; i<iEntriesCount; i++ )
       {
          if ( iAntennaDBM[i] < 500 )
          {
