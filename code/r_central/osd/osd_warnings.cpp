@@ -63,7 +63,11 @@ static bool bHasPITModeWarning = false;
 #define OSD_LINK_OUTLINE_BAND_PERCENT 0.145f
 #define OSD_LINK_OUTLINE_BAND_GROWTH 1.5f
 #define OSD_LINK_OUTLINE_MAX_ALPHA 0.80f
-#define OSD_LINK_OUTLINE_SEVERITY_EXPONENT 2.4f
+// 1.0 = linear response: the outline ramps in proportion to how far the link
+// quality has fallen between the warning and critical levels. Raise above 1.0
+// to bias the outline toward the critical end (barely-there near the warning
+// edge, slamming on near link loss).
+#define OSD_LINK_OUTLINE_SEVERITY_EXPONENT 1.0f
 #define OSD_LINK_OUTLINE_FALLOFF_EXPONENT 3.6f
 #define OSD_LINK_OUTLINE_GRADIENT_STEPS 96
 #define OSD_LINK_OUTLINE_CORNER_PERCENT 0.16f
@@ -94,6 +98,10 @@ void osd_warnings_render_link_outline()
    bool bModeBlackBars = (uFlags3 & OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS)?true:false;
    if ( (! bModeOutline) && (! bModeBlackBars) )
       return;
+   // The two modes are mutually exclusive in the menu, but a legacy or corrupt
+   // config could carry both bits. Never render both: the outline (halo) wins.
+   if ( bModeOutline )
+      bModeBlackBars = false;
    if ( ! g_bIsRouterReady )
       return;
 
@@ -160,8 +168,9 @@ void osd_warnings_render_link_outline()
    }
    else
    {
-      // Power-curve response: barely-there at the warning edge, strongly
-      // visible near link lost
+      // Response curve: linear by default (exponent 1.0), so the outline
+      // intensity tracks link degradation proportionally from the warning
+      // edge down to link lost.
       float fIntensity = powf(fSeverity, OSD_LINK_OUTLINE_SEVERITY_EXPONENT);
       float fGreen = 255.0f * (1.0f - fSeverity);
       // The band also grows inward as the link gets worse

@@ -567,10 +567,12 @@ void MenuVehicleOSDElements::valuesToUI()
    else
       m_pItemsSelect[23]->setEnabled(false);
 
-   if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS )
-      m_pItemsSelect[37]->setSelectedIndex(2);
-   else if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE )
+   // Keep in sync with the render: if both bits are somehow set, the outline
+   // (halo) wins, so surface it here too rather than "Black bars".
+   if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_OUTLINE )
       m_pItemsSelect[37]->setSelectedIndex(1);
+   else if ( g_pCurrentModel->osd_params.osd_flags3[iScreenIndex] & OSD_FLAG3_SHOW_LINK_WARNING_BLACK_BARS )
+      m_pItemsSelect[37]->setSelectedIndex(2);
    else
       m_pItemsSelect[37]->setSelectedIndex(0);
 
