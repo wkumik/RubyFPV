@@ -231,7 +231,12 @@ void hardware_i2c_enumerate_busses(int iConsoleLog)
             log_line("[Hardware]: Pi4: Searching for device on bus %d at address: 0x%02X", s_HardwareI2CBusInfo[i].nBusNumber, addrStart);
          }
 
-         snprintf( szBuff, sizeof(szBuff)/sizeof(szBuff[0]), "i2cdetect -y %d 0x%02X 0x%02X | tr '\n' ' ' | sed -e 's/[^0-9a-fA-F]/ /g' -e 's/^ *//g' -e 's/ *$//g' | tr -s ' ' | sed $'s/ /\\\n/g'", s_HardwareI2CBusInfo[i].nBusNumber, addrStart, addrEnd);
+         // Bound the probe with a hard kill timeout: a wedged bus/device can make i2cdetect's
+         // ioctl never return (process stuck in uninterruptible D state, immune to SIGKILL),
+         // which hangs pclose() and therefore boot, indefinitely - see hardware_procs.cpp's
+         // _hw_execute_bash_command, whose own "timeout" only bounds time between reads, not
+         // a stuck child process.
+         snprintf( szBuff, sizeof(szBuff)/sizeof(szBuff[0]), "timeout -k 1 2 i2cdetect -y %d 0x%02X 0x%02X | tr '\n' ' ' | sed -e 's/[^0-9a-fA-F]/ /g' -e 's/^ *//g' -e 's/ *$//g' | tr -s ' ' | sed $'s/ /\\\n/g'", s_HardwareI2CBusInfo[i].nBusNumber, addrStart, addrEnd);
          hw_execute_bash_command_raw_silent(szBuff, szOutput);
 
          if ( 0 == szOutput[0] )
