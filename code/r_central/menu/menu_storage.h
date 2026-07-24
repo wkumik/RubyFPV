@@ -56,6 +56,7 @@ class MenuStorage: public Menu
       int m_IndexMove;
       int m_IndexDelete;
       int m_IndexRecordingOptions;
+      int m_IndexPhoneTransfer;
       int m_MainItemsCount;
       
       void buildFilesListPictures();
