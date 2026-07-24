@@ -67,6 +67,7 @@ MenuStorage::MenuStorage(void)
    m_pPopupProgress = NULL;
    m_uMustRefreshTime = 0;
    m_IndexRecordingOptions = -1;
+   m_IndexPhoneTransfer = -1;
 }
 
 MenuStorage::~MenuStorage()
@@ -123,7 +124,8 @@ void MenuStorage::onShow()
    m_IndexCopy = -1;
    m_IndexMove = -1;
    m_IndexDelete = -1;
-   m_MainItemsCount = 5;
+   m_IndexPhoneTransfer = -1;
+   m_MainItemsCount = 6;
 
    m_IndexCopy = addMenuItem(new MenuItem(L("Copy media files to USB memory stick"), L("Copy your screenshots and videos to an external USB memory stick.")));
    m_IndexMove = addMenuItem(new MenuItem(L("Move media files to USB memory stick"), L("Move your screenshots and videos to an external USB memory stick.")));
@@ -138,6 +140,8 @@ void MenuStorage::onShow()
 
    m_IndexRecordingOptions =  addMenuItem(new MenuItem(L("Recording Options"), L("Change recording options.")));
    m_pMenuItems[m_IndexRecordingOptions]->showArrow();
+
+   m_IndexPhoneTransfer = addMenuItem(new MenuItem(L("Enter phone-transfer mode"), L("Stops the video link and turns the drone into a WiFi hotspot so you can copy onboard recordings to your phone.")));
 
    addMenuItem(new MenuItem(L("Prev Page"),""));
    addMenuItem(new MenuItem(L("Next Page"),""));
@@ -432,6 +436,13 @@ void MenuStorage::onReturnFromChild(int iChildMenuId, int returnValue)
          hw_execute_bash_command(szComm, NULL);   
       }
       onShow();
+      return;
+   }
+
+   if ( 7 == iChildMenuId/1000 )
+   {
+      log_line("Confirmed entering phone-transfer mode. Sending command to vehicle.");
+      handle_commands_send_to_vehicle(COMMAND_ID_ENTER_PHONE_TRANSFER_MODE, 0, NULL, 0);
       return;
    }
 }
@@ -985,6 +996,16 @@ void MenuStorage::onSelectItem()
    if ( m_IndexRecordingOptions == m_SelectedIndex )
    {
       add_menu_to_stack(new MenuControllerRecording());
+      return;
+   }
+
+   if ( m_IndexPhoneTransfer == m_SelectedIndex )
+   {
+      if ( checkIsArmed() )
+         return;
+      // Disruptive: drops the FPV link. Confirm before sending the command.
+      MenuConfirmation* pMC = new MenuConfirmation("Confirmation", "This will stop the video link and turn the drone into a WiFi hotspot so you can copy onboard recordings to your phone. The link will drop. Continue?", 7);
+      add_menu_to_stack(pMC);
       return;
    }
 

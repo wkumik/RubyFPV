@@ -313,5 +313,11 @@ typedef struct
 // u32 param: 1 - start recording on the vehicle SD card, 0 - stop.
 // Vehicle forwards to the waybeam HTTP API (/api/v1/record/start|stop).
 
+#define COMMAND_ID_ENTER_PHONE_TRANSFER_MODE 217
+// no params. Vehicle runs /usr/bin/ap_mode.sh start, which stops the FPV
+// radio + waybeam and brings wlan0 up as an open AP (RubyFPV-<MAC4> @
+// 192.168.4.1) so a phone can pull onboard recordings over SSH. The FPV
+// link drops; the vehicle replies OK before reconfiguring the radio.
+
 //------------------------------------------------------
 const char* commands_get_description(u8 command_type);
