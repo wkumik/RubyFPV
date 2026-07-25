@@ -138,7 +138,32 @@ void osd_render_stats_video_bitrate_history(float xPos, float yPos)
    osd_set_colors_background_fill(g_fOSDStatsBgTransparency);
    g_pRenderEngine->drawRoundRect(xPos, y-height_text_small*0.6, width, yBottomGraph - y + height_text_small*1.2, 1.5*POPUP_ROUND_MARGIN);
    osd_set_colors();
-      
+
+   // Color legend for the graph series (each label is drawn in that series' line color, below)
+   {
+      static const double s_uBitrateLegendColors[5][4] =
+      {
+         {200,200,255,1.0}, // current video bitrate
+         {250,230, 50,1.0}, // video bitrate avg
+         {255,250,220,1.0}, // total bitrate avg (incl. overhead)
+         {250, 50,100,1.0}, // radio datarate (capacity)
+         {250,100,150,1.0}  // datarate low (link-load threshold)
+      };
+      static const char* s_szBitrateLegend[5] = { "Video", "Avg", "Total", "Rate", "Load" };
+      float xLegend = xPos + dxGraph;
+      float yLegend = yPos + height_text * s_OSDStatsLineSpacing;
+      for( int iL=0; iL<5; iL++ )
+      {
+         double col[4] = { s_uBitrateLegendColors[iL][0], s_uBitrateLegendColors[iL][1], s_uBitrateLegendColors[iL][2], 1.0 };
+         g_pRenderEngine->setColors(col);
+         g_pRenderEngine->setStroke(0,0,0,0.5);
+         g_pRenderEngine->setStrokeSize(OSD_STRIKE_WIDTH);
+         g_pRenderEngine->drawText(xLegend, yLegend, s_idFontStatsSmall, s_szBitrateLegend[iL]);
+         xLegend += g_pRenderEngine->textWidth(s_idFontStatsSmall, s_szBitrateLegend[iL]) + g_pRenderEngine->textWidth(s_idFontStatsSmall, "  ");
+      }
+      osd_set_colors();
+   }
+
    u32 uMaxGraphValue = 0; // In mbps
    for( int i=0; i<(int)g_SM_DevVideoBitrateHistory.uTotalDataPoints; i++ )
    {

@@ -56,6 +56,8 @@
 #include "process_cam_params.h"
 #include "launchers_vehicle.h"
 #include "video_source_csi.h"
+#include "video_sources.h"
+#include "processor_tx_video.h"
 #include "adaptive_video.h"
 #include "negociate_radio.h"
 #include "radio_links.h"
@@ -551,24 +553,45 @@ void _update_videobitrate_history_data()
    g_SM_DevVideoBitrateHistory.uCurrentDataPoint++;
    if ( g_SM_DevVideoBitrateHistory.uCurrentDataPoint >= MAX_INTERVALS_VIDEO_BITRATE_HISTORY )
       g_SM_DevVideoBitrateHistory.uCurrentDataPoint = 0;
-   //int iIndex = (int)g_SM_DevVideoBitrateHistory.uCurrentDataPoint;
+   int iIndex = (int)g_SM_DevVideoBitrateHistory.uCurrentDataPoint;
 
-   // To fix g_SM_DevVideoBitrateHistory.uQuantizationOverflowValue = video_link_get_oveflow_quantization_value();
-// To fix 
-/*   g_SM_DevVideoBitrateHistory.uCurrentTargetVideoBitrate = g_SM_VideoLinkStats.overwrites.currentSetVideoBitrate;
-  
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoQuantization = g_SM_VideoLinkStats.overwrites.currentH264QUantization;
+   // Populate per-slice video bitrate history for the GS OSD graph.
+   // Note: the legacy g_SM_VideoLinkStats.overwrites.* struct no longer exists in this tree.
+   //  - "current set/target video bitrate" -> video_sources_get_last_set_video_bitrate() (actual applied bitrate, BPS)
+   //  - "current profile max video bitrate" -> current video profile's configured uTargetVideoBitrateBPS
+   //  - "current video profile"            -> g_pCurrentModel->video_params.iCurrentVideoProfile
+   //  - "current profile shift level"      -> adaptive_video_is_on_lower_video_bitrate() (adaptive down/up state)
+   //  - "current H264 quantization"        -> current video profile's configured h264quantization
+   int iCurrentVideoProfile = g_pCurrentModel->video_params.iCurrentVideoProfile;
+   if ( (iCurrentVideoProfile < 0) || (iCurrentVideoProfile >= MAX_VIDEO_LINK_PROFILES) )
+      iCurrentVideoProfile = 0;
+
+   u32 uProfileTargetBitrateBPS = g_pCurrentModel->video_link_profiles[iCurrentVideoProfile].uTargetVideoBitrateBPS;
+   u32 uSetVideoBitrateBPS = video_sources_get_last_set_video_bitrate();
+   if ( 0 == uSetVideoBitrateBPS )
+      uSetVideoBitrateBPS = uProfileTargetBitrateBPS;
+
+   g_SM_DevVideoBitrateHistory.uCurrentTargetVideoBitrate = uSetVideoBitrateBPS;
+
+   int iQuant = g_pCurrentModel->video_link_profiles[iCurrentVideoProfile].h264quantization;
+   if ( iQuant < 0 )
+      iQuant = -iQuant; // negative encodes the value used when auto-QP is disabled
+   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoQuantization = (u8)iQuant;
    if ( (0 == video_sources_get_capture_start_time()) || (g_TimeNow < video_sources_get_capture_start_time() + 3000) )
       g_SM_DevVideoBitrateHistory.history[iIndex].uVideoQuantization = 0xFF;
 
    g_SM_DevVideoBitrateHistory.history[iIndex].uMinVideoDataRateMbps = get_last_tx_minimum_video_radio_datarate_bps()/1000/1000;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateCurrentProfileKb = g_SM_VideoLinkStats.overwrites.currentProfileMaxVideoBitrate;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateTargetKb = g_SM_VideoLinkStats.overwrites.currentSetVideoBitrate;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateKb = g_pProcessorTxVideo->getCurrentVideoBitrate()/1000;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateAvgKb = g_pProcessorTxVideo->getCurrentVideoBitrateAverage()/1000;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uTotalVideoBitrateAvgKb = g_pProcessorTxVideo->getCurrentTotalVideoBitrateAverage()/1000;
-   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoProfileSwitches = g_SM_VideoLinkStats.overwrites.currentProfileShiftLevel | (g_SM_VideoLinkStats.overwrites.currentVideoLinkProfile<<4);
-*/
+   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateCurrentProfileKb = (u16)(uProfileTargetBitrateBPS/1000);
+   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateTargetKb = (u16)(uSetVideoBitrateBPS/1000);
+   if ( NULL != g_pProcessorTxVideo )
+   {
+      g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateKb = (u16)(g_pProcessorTxVideo->getCurrentVideoBitrate()/1000);
+      g_SM_DevVideoBitrateHistory.history[iIndex].uVideoBitrateAvgKb = (u16)(g_pProcessorTxVideo->getCurrentVideoBitrateAverage()/1000);
+      g_SM_DevVideoBitrateHistory.history[iIndex].uTotalVideoBitrateAvgKb = (u16)(g_pProcessorTxVideo->getCurrentTotalVideoBitrateAverage()/1000);
+   }
+   int iShiftLevel = adaptive_video_is_on_lower_video_bitrate() ? 1 : 0;
+   g_SM_DevVideoBitrateHistory.history[iIndex].uVideoProfileSwitches = (u8)((iShiftLevel & 0x0F) | ((iCurrentVideoProfile & 0x0F)<<4));
+
    u32 uMinSendTime = 100;
    if ( g_SM_DevVideoBitrateHistory.uGraphSliceInterval > uMinSendTime )
       uMinSendTime = g_SM_DevVideoBitrateHistory.uGraphSliceInterval;
