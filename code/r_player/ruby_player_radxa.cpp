@@ -531,7 +531,7 @@ void _do_stream_mode_pipe()
       }
 
       int iRes = mpp_feed_data_to_decoder(g_uPipeBuffer, nRead);
-      if ( iRes > 5 )
+      if ( iRes > MPP_DECODER_GIVEUP_MS )
       {
          log_line("Stalled consuming %d bytes, stall for %d ms. Signaling alarm", nRead, iRes);
          if ( get_current_timestamp_ms() > uTimeStartReceivingStream + 5000 )
@@ -745,7 +745,7 @@ void _do_stream_mode_sm()
       }
 
       int iRes = mpp_feed_data_to_decoder(g_uPipeBuffer, nRead);
-      if ( iRes > 5 )
+      if ( iRes > MPP_DECODER_GIVEUP_MS )
       {
          log_line("Stalled consuming %d bytes, stall for %d ms. Signaling alarm", nRead, iRes);
          if ( get_current_timestamp_ms() > uTimeStartReceivingStream + 5000 )
