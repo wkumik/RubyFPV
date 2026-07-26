@@ -1429,6 +1429,14 @@ void hardware_camera_maj_enable_audio(bool bEnable, int iBitrate, int iVolume)
       hwcam_be_format_cli_set(szComm, sizeof(szComm), ".audio.enabled", "false", false);
       _add_maj_command_to_queue_or_exec(szComm, true);
    }
+
+   // audio.enabled/codec/sampleRate/channels are all "restart_required" per
+   // the encoder's own /api/v1/capabilities -- writing them alone (the calls
+   // above) is silently accepted but has no effect on the already-running
+   // encoder process until it's reloaded. Without this, onboard recordings
+   // (and the live RTP audio stream) end up with no audio track at all even
+   // though the config on disk correctly shows audio.enabled=true.
+   hw_execute_bash_command_raw(hwcam_be_reload_cmd(), NULL);
    hardware_sleep_ms(10);
 }
 
