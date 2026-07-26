@@ -129,7 +129,7 @@ int _find_builtin_wifi_interface(char* szOutName, int iMaxLen)
       char szBuff[512];
 
       // Check if this interface is a USB device by looking for busnum in sysfs
-      snprintf(szBusCheck, sizeof(szBusCheck), "cat /sys/class/net/%s/device/uevent 2>/dev/null | grep USB", pLine);
+      snprintf(szBusCheck, sizeof(szBusCheck), "cat /sys/class/net/%s/device/uevent 2>/dev/null | grep -i usb", pLine);
       szBuff[0] = 0;
       hw_execute_bash_command_raw(szBusCheck, szBuff);
 
