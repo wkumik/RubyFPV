@@ -101,6 +101,88 @@ int _load_wifi_config(int* pEnabled, char* szSSID, int iSSIDMaxLen, char* szPass
    return 1;
 }
 
+// Returns 1 if the intwifi interface exists (built-in WiFi was already renamed)
+int _does_intwifi_exist()
+{
+   char szCheck[256];
+   szCheck[0] = 0;
+   hw_execute_bash_command_raw("ip link show intwifi 2>/dev/null | head -1", szCheck);
+   if ( 0 != szCheck[0] && NULL != strstr(szCheck, INTWIFI_INTERFACE_NAME) )
+      return 1;
+   return 0;
+}
+
+// Returns 1 if the interface sits on the USB bus (an external FPV adapter), 0 if not.
+// The device's sysfs subsystem is authoritative: "usb" for dongles, "sdio"/"mmc"/"pci"/
+// "platform" for built-in radios. The full sysfs path is used as a second signal because
+// some drivers do not export a "device/subsystem" link.
+int _is_usb_wifi_interface(const char* szInterfaceName)
+{
+   char szComm[512];
+   char szBuff[512];
+
+   snprintf(szComm, sizeof(szComm), "basename $(readlink -f /sys/class/net/%s/device/subsystem 2>/dev/null) 2>/dev/null", szInterfaceName);
+   szBuff[0] = 0;
+   hw_execute_bash_command_raw(szComm, szBuff);
+   removeTrailingNewLines(szBuff);
+
+   if ( 0 == strcmp(szBuff, "usb") )
+      return 1;
+
+   snprintf(szComm, sizeof(szComm), "readlink -f /sys/class/net/%s 2>/dev/null", szInterfaceName);
+   szBuff[0] = 0;
+   hw_execute_bash_command_raw(szComm, szBuff);
+   removeTrailingNewLines(szBuff);
+
+   // ie: /sys/devices/platform/fe8c0000.usb/usb1/1-1/1-1:1.0/net/wlan0
+   if ( NULL != strstr(szBuff, "/usb") )
+      return 1;
+
+   return 0;
+}
+
+// Returns 1 if the interface is driven by a radio driver Ruby uses for the FPV link.
+// Such an interface must never be renamed or brought down by this utility.
+int _is_fpv_radio_interface(const char* szInterfaceName)
+{
+   static const char* s_szFPVRadioDrivers[] =
+      { "88xxau", "88XXau", "8812au", "8814au", "8812eu", "88x2eu", "88x2bu", "8733bu",
+        "ath9k_htc", "mt7601u", "rt2800usb", NULL };
+
+   char szComm[512];
+   char szDriver[512];
+
+   snprintf(szComm, sizeof(szComm), "basename $(readlink -f /sys/class/net/%s/device/driver 2>/dev/null) 2>/dev/null", szInterfaceName);
+   szDriver[0] = 0;
+   hw_execute_bash_command_raw(szComm, szDriver);
+   removeTrailingNewLines(szDriver);
+
+   if ( 0 == szDriver[0] )
+      return 0;
+
+   for( int i=0; NULL != s_szFPVRadioDrivers[i]; i++ )
+   {
+      if ( NULL != strstr(szDriver, s_szFPVRadioDrivers[i]) )
+      {
+         log_line("Interface %s uses FPV radio driver %s. Skipping it.", szInterfaceName, szDriver);
+         return 1;
+      }
+   }
+
+   // A card already in monitor mode is in use by the FPV link, whatever the driver is
+   snprintf(szComm, sizeof(szComm), "iw dev %s info 2>/dev/null | grep -c monitor", szInterfaceName);
+   szDriver[0] = 0;
+   hw_execute_bash_command_raw(szComm, szDriver);
+   removeTrailingNewLines(szDriver);
+   if ( atoi(szDriver) > 0 )
+   {
+      log_line("Interface %s is in monitor mode (FPV link). Skipping it.", szInterfaceName);
+      return 1;
+   }
+
+   return 0;
+}
+
 // Finds the built-in (non-USB) WiFi interface name
 // Returns 1 if found, 0 otherwise. Writes interface name to szOutName.
 int _find_builtin_wifi_interface(char* szOutName, int iMaxLen)
@@ -108,9 +190,7 @@ int _find_builtin_wifi_interface(char* szOutName, int iMaxLen)
    szOutName[0] = 0;
 
    // Check if intwifi already exists (already renamed)
-   char szCheck[256];
-   hw_execute_bash_command_raw("ip link show intwifi 2>/dev/null | head -1", szCheck);
-   if ( 0 != szCheck[0] && NULL != strstr(szCheck, "intwifi") )
+   if ( _does_intwifi_exist() )
    {
       strncpy(szOutName, INTWIFI_INTERFACE_NAME, iMaxLen);
       szOutName[iMaxLen-1] = 0;
@@ -125,24 +205,23 @@ int _find_builtin_wifi_interface(char* szOutName, int iMaxLen)
    char* pLine = strtok(szOutput, "\n");
    while ( pLine != NULL )
    {
-      char szBusCheck[512];
-      char szBuff[512];
-
-      // Check if this interface is a USB device by looking for busnum in sysfs
-      snprintf(szBusCheck, sizeof(szBusCheck), "cat /sys/class/net/%s/device/uevent 2>/dev/null | grep USB", pLine);
-      szBuff[0] = 0;
-      hw_execute_bash_command_raw(szBusCheck, szBuff);
-
-      if ( 0 == szBuff[0] )
+      if ( _is_usb_wifi_interface(pLine) )
       {
-         // No USB reference found - this is likely the built-in WiFi
-         log_line("Found built-in WiFi interface: %s (no USB bus reference)", pLine);
-         strncpy(szOutName, pLine, iMaxLen);
-         szOutName[iMaxLen-1] = 0;
-         return 1;
+         log_line("Interface %s is on the USB bus (external adapter). Skipping it.", pLine);
+         pLine = strtok(NULL, "\n");
+         continue;
       }
 
-      pLine = strtok(NULL, "\n");
+      if ( _is_fpv_radio_interface(pLine) )
+      {
+         pLine = strtok(NULL, "\n");
+         continue;
+      }
+
+      log_line("Found built-in WiFi interface: %s (not on the USB bus)", pLine);
+      strncpy(szOutName, pLine, iMaxLen);
+      szOutName[iMaxLen-1] = 0;
+      return 1;
    }
 
    log_line("No built-in WiFi interface found.");
@@ -333,6 +412,26 @@ int main(int argc, char *argv[])
    return 0;
    #endif
 
+   // Load WiFi config first: no interface may be renamed or brought down unless the user
+   // explicitly enabled internal WiFi. On a controller that never configured it, touching
+   // a wlan interface would take an FPV radio card out of the FPV link.
+   int iEnabled = 0;
+   char szSSID[128];
+   char szPassword[128];
+   szSSID[0] = 0;
+   szPassword[0] = 0;
+
+   int iHasConfig = _load_wifi_config(&iEnabled, szSSID, sizeof(szSSID), szPassword, sizeof(szPassword));
+
+   if ( (! iHasConfig) || (! iEnabled) )
+   {
+      log_line("Internal WiFi is not enabled. Not touching any radio interface. Exiting.");
+      // Clean up a connection left over from a previous, enabled run
+      if ( bDisconnect && _does_intwifi_exist() )
+         _disconnect_wifi();
+      return 0;
+   }
+
    // Find and rename built-in WiFi interface
    char szInterfaceName[64];
    if ( ! _find_builtin_wifi_interface(szInterfaceName, sizeof(szInterfaceName)) )
@@ -374,25 +473,6 @@ int main(int argc, char *argv[])
          log_line("WiFi was re-disabled during reconnect wait. Aborting reconnect.");
          return 0;
       }
-   }
-
-   // Load WiFi config
-   int iEnabled = 0;
-   char szSSID[128];
-   char szPassword[128];
-   szSSID[0] = 0;
-   szPassword[0] = 0;
-
-   if ( ! _load_wifi_config(&iEnabled, szSSID, sizeof(szSSID), szPassword, sizeof(szPassword)) )
-   {
-      log_line("No valid WiFi config found. Exiting.");
-      return 0;
-   }
-
-   if ( ! iEnabled )
-   {
-      log_line("Internal WiFi is disabled in config. Exiting.");
-      return 0;
    }
 
    _clear_wifi_disabled_flag();
