@@ -69,6 +69,31 @@ runtime behaviour. Report what you actually ran and what you did not.
 - Never rewrite history on a branch someone else may have pulled. No
   force-push to shared branches without asking first.
 
+### Finding your own changes
+
+Before staging anything, establish what is actually yours. "Everything in the
+working tree" is not the answer — it includes whatever the base fork did while
+you were working.
+
+```bash
+git fetch <base-remote>
+BASE=$(git merge-base <base-remote>/<base-branch> HEAD)
+git diff $BASE...HEAD --stat     # your commits only
+git status --short               # plus anything uncommitted
+```
+
+- **Three dots, not two.** `BASE..HEAD` diffs against the base's *current tip*,
+  so every commit the base fork landed after you branched shows up inverted, as
+  if you had reverted it. `BASE...HEAD` diffs against the merge-base and shows
+  your work alone.
+- Quote that `$BASE` SHA in the branch's PR body — it is the "base commit" the
+  PR is required to state.
+- If the `--stat` covers more than one feature, split before committing (§0.6).
+  Grouping is cheap now and expensive after the fact (§3).
+- A hunk that is in your diff but that you did not write came from somewhere.
+  Find where, and check it against the reverted-hunk trap below before you keep
+  it.
+
 ### Staging
 
 - **Never `git add -A` / `git add .`** A working tree is almost always a soup of
