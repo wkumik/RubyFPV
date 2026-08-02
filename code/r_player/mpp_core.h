@@ -25,4 +25,8 @@ int mpp_feed_data_to_decoder(void* pData, int iLength);
 int mpp_mark_end_of_stream();
 bool mpp_get_clear_stream_changed_flag();
 
+// Ask for the currently displayed frame to be written out for a screenshot.
+// Signal safe: only sets a flag, the copy happens on the display thread.
+void mpp_request_screenshot_frame();
+
 

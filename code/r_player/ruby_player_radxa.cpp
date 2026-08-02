@@ -951,6 +951,13 @@ void handle_sigint(int sig)
    g_bQuit = true;
 }
 
+void handle_sigusr1(int sig)
+{
+   // ruby_central asks for the displayed frame, so it can compose a screenshot
+   // that has both the video and the OSD on it.
+   mpp_request_screenshot_frame();
+}
+
 int main(int argc, char *argv[])
 {
    if ( strcmp(argv[argc-1], "-ver") == 0 )
@@ -1118,6 +1125,7 @@ int main(int argc, char *argv[])
    signal(SIGINT, handle_sigint);
    signal(SIGTERM, handle_sigint);
    signal(SIGQUIT, handle_sigint);
+   signal(SIGUSR1, handle_sigusr1);
 
    ret = pthread_getschedparam(this_thread, &policy, &params);
    if ( ret != 0 )

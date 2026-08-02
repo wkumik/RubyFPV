@@ -51,6 +51,13 @@ type_drm_runtime_state s_DRMRuntimeState;
 int s_iDRMCoreInitialized = 0;
 int s_iDRMEnableVSync = 1;
 
+// Where the video plane last landed on the display (scaled/letterboxed). Kept as
+// file statics rather than in the runtime state struct so this stays additive.
+static int s_iDRMVideoDestX = 0;
+static int s_iDRMVideoDestY = 0;
+static int s_iDRMVideoDestWidth = 0;
+static int s_iDRMVideoDestHeight = 0;
+
 static const char *_ruby_drm_core_get_connector_str(uint32_t conn_type)
 {
    switch (conn_type)
@@ -950,6 +957,11 @@ int ruby_drm_core_set_plane_properties_and_buffer(uint32_t uBufferId)
       }
       uSrcWidth = iVideoWidth;
       uSrcHeight = iVideoHeight;
+
+      s_iDRMVideoDestX = (int)uCrtX;
+      s_iDRMVideoDestY = (int)uCrtY;
+      s_iDRMVideoDestWidth = (int)uCrtW;
+      s_iDRMVideoDestHeight = (int)uCrtH;
    }
    log_line("[DRMCore] Setting current plane (id: %u, plane index %d) buffer id to %u, zindex %d",
       s_DRMRuntimeState.objInfoPlane.uObjId, s_DRMRuntimeState.objInfoPlane.iObjIndex, uBufferId, (int)zPos);
@@ -1027,6 +1039,18 @@ void ruby_drm_set_video_source_size(int iWidth, int iHeight)
 {
    s_DRMRuntimeState.iVideoSourceWidth = iWidth;
    s_DRMRuntimeState.iVideoSourceHeight = iHeight;
+}
+
+void ruby_drm_get_video_dest_rect(int* piX, int* piY, int* piWidth, int* piHeight)
+{
+   if ( NULL != piX )
+      *piX = s_iDRMVideoDestX;
+   if ( NULL != piY )
+      *piY = s_iDRMVideoDestY;
+   if ( NULL != piWidth )
+      *piWidth = s_iDRMVideoDestWidth;
+   if ( NULL != piHeight )
+      *piHeight = s_iDRMVideoDestHeight;
 }
 
 void ruby_drm_enable_vsync(int iEnableVSync)

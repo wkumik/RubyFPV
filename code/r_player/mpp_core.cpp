@@ -31,6 +31,7 @@
 */
 
 #include "mpp_core.h"
+#include "../base/screenshot_frame.h"
 
 #define READ_VIDEO_BUF_SIZE (2*1024*1024) // SZ_1M https://github.com/rockchip-linux/mpp/blob/ed377c99a733e2cdbcc457a6aa3f0fcd438a9dff/osal/inc/mpp_common.h#L179
 #define MAX_VIDEO_FRAMES 128  // min 16 and 20+ recommended (mpp/readme.txt)
@@ -71,6 +72,21 @@ pthread_t g_MPPUpdateDisplayThread;
 extern bool g_bQuit;
 int g_iMPPFrameBufferIndexToDisplay = 0;
 uint32_t g_uMPPDRMBufferIdToDisplay = 0;
+
+int g_iMPPVideoWidth = 0;
+int g_iMPPVideoHeight = 0;
+u32 g_uMPPStrideH = 0;
+u32 g_uMPPStrideV = 0;
+
+volatile sig_atomic_t g_iMPPScreenshotRequested = 0;
+bool g_bMPPScreenshotWriteInProgress = false;
+
+typedef struct
+{
+   type_screenshot_frame_header header;
+   u8* pData;
+   u32 uDataSize;
+} type_mpp_screenshot_write_info;
 
 int _mpp_send_command(MpiCmd command, RK_U32 value)
 {
@@ -137,6 +153,11 @@ int _mpp_init_frames(MppFrame pFrame)
       log_line("[MPP] Received video format: Unknown");
 
    log_line("[MPP] Frame info changed to %dx%d, strides: %dx%d", w,h, stride_h, stride_v);
+
+   g_iMPPVideoWidth = w;
+   g_iMPPVideoHeight = h;
+   g_uMPPStrideH = (u32)stride_h;
+   g_uMPPStrideV = (u32)stride_v;
 
    int iRet = mpp_buffer_group_get_external(&g_MPPBufferGroup, MPP_BUFFER_TYPE_DRM);
 
@@ -228,6 +249,165 @@ void _mpp_core_periodic_checks()
    //ruby_drm_set_object_property(pPlaneInfo, "CRTC_X", uCrtX);
 }
 
+void mpp_request_screenshot_frame()
+{
+   g_iMPPScreenshotRequested = 1;
+}
+
+void* _mpp_thread_write_screenshot_frame(void *param)
+{
+   hw_log_current_thread_attributes("MPP screenshot frame write");
+   type_mpp_screenshot_write_info* pInfo = (type_mpp_screenshot_write_info*)param;
+   if ( NULL == pInfo )
+      return NULL;
+
+   char szFilePartial[MAX_FILE_PATH_SIZE];
+   char szFileFinal[MAX_FILE_PATH_SIZE];
+   snprintf(szFilePartial, sizeof(szFilePartial)/sizeof(szFilePartial[0]), "%s%s", FOLDER_RUBY_TEMP, FILE_TEMP_SCREENSHOT_FRAME_PARTIAL);
+   snprintf(szFileFinal, sizeof(szFileFinal)/sizeof(szFileFinal[0]), "%s%s", FOLDER_RUBY_TEMP, FILE_TEMP_SCREENSHOT_FRAME);
+
+   // Write to a partial name and rename, so the reader never sees a half written frame
+   FILE* fd = fopen(szFilePartial, "wb");
+   if ( NULL == fd )
+      log_softerror_and_alarm("[MPP] Failed to create screenshot frame file [%s], error: %s", szFilePartial, strerror(errno));
+   else
+   {
+      bool bOk = (1 == fwrite(&(pInfo->header), sizeof(type_screenshot_frame_header), 1, fd));
+      if ( bOk )
+         bOk = (pInfo->uDataSize == fwrite(pInfo->pData, 1, pInfo->uDataSize, fd));
+      fclose(fd);
+      if ( ! bOk )
+      {
+         log_softerror_and_alarm("[MPP] Failed to write screenshot frame file [%s]", szFilePartial);
+         unlink(szFilePartial);
+      }
+      else if ( 0 != rename(szFilePartial, szFileFinal) )
+         log_softerror_and_alarm("[MPP] Failed to rename screenshot frame file to [%s], error: %s", szFileFinal, strerror(errno));
+      else
+         log_line("[MPP] Wrote screenshot frame (%u x %u) to [%s]", pInfo->header.uVideoWidth, pInfo->header.uVideoHeight, szFileFinal);
+   }
+
+   free(pInfo->pData);
+   free(pInfo);
+   g_bMPPScreenshotWriteInProgress = false;
+   return NULL;
+}
+
+// Copies the frame that is currently on screen out of its DRM buffer, then hands it
+// to a thread to be written to disk. Runs on the display thread, so it does the
+// minimum here: the decoder can reuse the buffer as soon as we are done copying.
+void _mpp_capture_screenshot_frame(u32 uDisplayedBufferId)
+{
+   if ( g_bMPPScreenshotWriteInProgress )
+   {
+      log_softerror_and_alarm("[MPP] Skipping screenshot frame capture, a previous one is still being written.");
+      return;
+   }
+   if ( (! g_bMPPFramesBuffersInitialised) || (g_iMPPVideoWidth <= 0) || (g_iMPPVideoHeight <= 0) )
+   {
+      log_softerror_and_alarm("[MPP] Skipping screenshot frame capture, no decoded frames yet.");
+      return;
+   }
+
+   int iFrameIndex = -1;
+   for( int i=0; i<g_iMPPBuffersSize; i++ )
+      if ( g_Frames[i].drmBufferInfo.uBufferId == uDisplayedBufferId )
+      {
+         iFrameIndex = i;
+         break;
+      }
+   if ( -1 == iFrameIndex )
+   {
+      log_softerror_and_alarm("[MPP] Skipping screenshot frame capture, displayed buffer id %u not found.", uDisplayedBufferId);
+      return;
+   }
+
+   struct drm_mode_map_dumb mreq;
+   memset(&mreq, 0, sizeof(mreq));
+   mreq.handle = g_Frames[iFrameIndex].drmBufferInfo.uHandle;
+   if ( 0 != drmIoctl(ruby_drm_core_get_fd(), DRM_IOCTL_MODE_MAP_DUMB, &mreq) )
+   {
+      log_softerror_and_alarm("[MPP] Failed to map screenshot frame buffer, error: %s", strerror(errno));
+      return;
+   }
+
+   u32 uMapSize = g_Frames[iFrameIndex].drmBufferInfo.uSize;
+   u8* pMap = (u8*) mmap(0, uMapSize, PROT_READ, MAP_SHARED, ruby_drm_core_get_fd(), mreq.offset);
+   if ( MAP_FAILED == pMap )
+   {
+      log_softerror_and_alarm("[MPP] Failed to mmap screenshot frame buffer, error: %s", strerror(errno));
+      return;
+   }
+
+   // Repack to visible height only: Y plane, then UV plane right after it
+   u32 uYSize = g_uMPPStrideH * (u32)g_iMPPVideoHeight;
+   u32 uUVSize = g_uMPPStrideH * (u32)(g_iMPPVideoHeight/2);
+   u32 uUVSourceOffset = g_uMPPStrideH * g_uMPPStrideV;
+
+   type_mpp_screenshot_write_info* pInfo = NULL;
+   if ( uUVSourceOffset + uUVSize > uMapSize )
+      log_softerror_and_alarm("[MPP] Skipping screenshot frame capture, frame buffer is smaller (%u bytes) than expected.", uMapSize);
+   else
+   {
+      pInfo = (type_mpp_screenshot_write_info*) malloc(sizeof(type_mpp_screenshot_write_info));
+      if ( NULL != pInfo )
+      {
+         pInfo->pData = (u8*) malloc(uYSize + uUVSize);
+         if ( NULL == pInfo->pData )
+         {
+            free(pInfo);
+            pInfo = NULL;
+            log_softerror_and_alarm("[MPP] Failed to allocate %u bytes for screenshot frame.", uYSize + uUVSize);
+         }
+         else
+         {
+            memcpy(pInfo->pData, pMap, uYSize);
+            memcpy(pInfo->pData + uYSize, pMap + uUVSourceOffset, uUVSize);
+            pInfo->uDataSize = uYSize + uUVSize;
+
+            memset(&(pInfo->header), 0, sizeof(type_screenshot_frame_header));
+            pInfo->header.uMagic = SCREENSHOT_FRAME_MAGIC;
+            pInfo->header.uVersion = SCREENSHOT_FRAME_VERSION;
+            pInfo->header.uVideoWidth = (u32)g_iMPPVideoWidth;
+            pInfo->header.uVideoHeight = (u32)g_iMPPVideoHeight;
+            pInfo->header.uStrideH = g_uMPPStrideH;
+            pInfo->header.uStrideV = (u32)g_iMPPVideoHeight;
+            int iDestX = 0, iDestY = 0, iDestWidth = 0, iDestHeight = 0;
+            ruby_drm_get_video_dest_rect(&iDestX, &iDestY, &iDestWidth, &iDestHeight);
+            pInfo->header.uDestX = (u32)iDestX;
+            pInfo->header.uDestY = (u32)iDestY;
+            pInfo->header.uDestWidth = (u32)iDestWidth;
+            pInfo->header.uDestHeight = (u32)iDestHeight;
+         }
+      }
+   }
+
+   munmap(pMap, uMapSize);
+
+   if ( NULL == pInfo )
+      return;
+
+   g_bMPPScreenshotWriteInProgress = true;
+   pthread_t threadWrite;
+   if ( 0 != pthread_create(&threadWrite, NULL, &_mpp_thread_write_screenshot_frame, (void*)pInfo) )
+   {
+      log_softerror_and_alarm("[MPP] Failed to start screenshot frame write thread.");
+      free(pInfo->pData);
+      free(pInfo);
+      g_bMPPScreenshotWriteInProgress = false;
+      return;
+   }
+   pthread_detach(threadWrite);
+}
+
+void _mpp_check_screenshot_request(u32 uDisplayedBufferId)
+{
+   if ( ! g_iMPPScreenshotRequested )
+      return;
+   g_iMPPScreenshotRequested = 0;
+   _mpp_capture_screenshot_frame(uDisplayedBufferId);
+}
+
 void* _mpp_thread_update_display(void *param)
 {
    log_line("[MPPThreadUpdateDisplay] Started.");
@@ -254,6 +434,9 @@ void* _mpp_thread_update_display(void *param)
          {
             if ( errno != ETIMEDOUT )
                log_softerror_and_alarm("[MPPThreadUpdateDisplay] Failed to timewait on semaphore. Error: %d, %s", errno, strerror(errno));
+            // Still serve a screenshot request while the stream is stalled, the last
+            // frame is what the user is looking at
+            _mpp_check_screenshot_request(uLastDRMBufferIdDisplayed);
             continue;
          }
          uNewDRMBufferIdToDisplay = g_uMPPDRMBufferIdToDisplay;
@@ -265,6 +448,7 @@ void* _mpp_thread_update_display(void *param)
          break;
       if ( uLastDRMBufferIdDisplayed == uNewDRMBufferIdToDisplay )
       {
+         _mpp_check_screenshot_request(uLastDRMBufferIdDisplayed);
          hardware_sleep_ms(1);
          continue;
       }
@@ -273,6 +457,8 @@ void* _mpp_thread_update_display(void *param)
       g_pSMProcessStats->lastIPCOutgoingTime = get_current_timestamp_ms();
       ruby_drm_core_set_plane_buffer(uNewDRMBufferIdToDisplay);
       uLastDRMBufferIdDisplayed = uNewDRMBufferIdToDisplay;
+
+      _mpp_check_screenshot_request(uLastDRMBufferIdDisplayed);
    }
    if ( g_bQuit )
       log_line("[MPPThreadUpdateDisplay] Ending render thread due to quit signal.");

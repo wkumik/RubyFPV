@@ -67,6 +67,8 @@
 #define FILE_TEMP_VIDEO_FILE_OSD "tmpVideo.osd"
 #define FILE_TEMP_VIDEO_FILE_SRT "tmpVideo.srt"
 #define FILE_TEMP_VIDEO_FILE_PROCESS_ERROR "tmpErrorVideo.stat"
+#define FILE_TEMP_SCREENSHOT_FRAME "tmpScreenshotFrame.nv12"
+#define FILE_TEMP_SCREENSHOT_FRAME_PARTIAL "tmpScreenshotFrame.part"
 #define FILE_TEMP_UPDATE_IN_PROGRESS "updateinprogress"
 #define FILE_TEMP_UPDATE_IN_PROGRESS_APPLY "updateinprogressapply"
 #define FILE_TEMP_UPDATE_CONTROLLER_PROGRESS "tmp_ctrl_update_result.txt"
