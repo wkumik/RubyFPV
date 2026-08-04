@@ -46,8 +46,8 @@ static void _ensure_msp_state_init()
       return;
    memset(&s_MSPState, 0, sizeof(s_MSPState));
    parse_msp_reset_state(&s_MSPState);
-   s_MSPState.headerTelemetryMSP.uMSPOSDCols = 53;
-   s_MSPState.headerTelemetryMSP.uMSPOSDRows = 20;
+   s_MSPState.headerTelemetryMSP.uMSPOSDCols = DEFAULT_MSPOSD_RECORDING_COLS;
+   s_MSPState.headerTelemetryMSP.uMSPOSDRows = DEFAULT_MSPOSD_RECORDING_ROWS;
    s_bMSPStateInit = true;
 }
 
@@ -125,6 +125,12 @@ static void _write_header()
       case MSP_FLAGS_FC_TYPE_ARDUPILOT:  memcpy(uHeader, "ARDU", 4); break;
       default: break; // zero-padded when FC type unknown
    }
+   // bytes 36-39: grid cols/rows (u16 each), read by external tools (Digital-FPV-OSD-Tool)
+   // to auto-detect the frame stride instead of assuming a fixed default grid size.
+   u16 uCols = DEFAULT_MSPOSD_RECORDING_COLS;
+   u16 uRows = DEFAULT_MSPOSD_RECORDING_ROWS;
+   memcpy(&(uHeader[36]), &uCols, sizeof(u16));
+   memcpy(&(uHeader[38]), &uRows, sizeof(u16));
    fwrite(uHeader, 1, 40, s_pOSDFile);
    s_bHeaderWritten = true;
 }
@@ -147,10 +153,16 @@ static void _write_frame()
    int iBuffPos = 0;
    int iCols = s_MSPState.headerTelemetryMSP.uMSPOSDCols;
    if ( iCols <= 0 || iCols > 64 )
-      iCols = 53;
+      iCols = DEFAULT_MSPOSD_RECORDING_COLS;
+   int iRows = s_MSPState.headerTelemetryMSP.uMSPOSDRows;
+   if ( iRows <= 0 || iRows > 24 )
+      iRows = DEFAULT_MSPOSD_RECORDING_ROWS;
+   // Real canvas (iCols/iRows) can be smaller than the padded output grid, e.g. a
+   // 50x18 FC canvas padded into 60x22: pad cells with 0, don't read uScreenChars
+   // at x>=iCols, which would alias into the next row's real data (real stride is iCols).
    for ( int y = 0; y < DEFAULT_MSPOSD_RECORDING_ROWS; y++ )
    for ( int x = 0; x < DEFAULT_MSPOSD_RECORDING_COLS; x++ )
-      uBuffer[iBuffPos++] = s_MSPState.uScreenChars[x + y * iCols];
+      uBuffer[iBuffPos++] = ( (x < iCols) && (y < iRows) ) ? s_MSPState.uScreenChars[x + y * iCols] : 0;
 
    fwrite(uBuffer, 1, iBuffPos * sizeof(u16), s_pOSDFile);
    s_iFramesWritten = (s_MSPState.iLastDrawFrameNumber > 0) ? s_MSPState.iLastDrawFrameNumber : (s_iFramesWritten + 1);
