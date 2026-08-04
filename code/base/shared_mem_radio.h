@@ -54,6 +54,8 @@ typedef struct
 typedef struct 
 {
    int iAntennaCount;
+   int iAntennaDBM[MAX_RADIO_ANTENNAS];
+   int iAntennaDBMNoise[MAX_RADIO_ANTENNAS];
    type_runtime_radio_rx_signal_info signalInfoAll;
    type_runtime_radio_rx_signal_info signalInfoVideo;
    type_runtime_radio_rx_signal_info signalInfoData;

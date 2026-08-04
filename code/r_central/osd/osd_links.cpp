@@ -263,7 +263,34 @@ float _osd_get_radio_link_new_height()
    return fHeightLink;
 }
 
-float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMaxRxQuality, int dbm, int iSNR, bool bShowBars, bool bShowNumbers, bool bUplink, bool bHorizontal, u32 uRadioLinkNumbersFlags, bool bDraw, bool bDatarateChanged)
+// Cached feature switch - showantennavalues file must exist for this to work
+bool _osd_show_antenna_values_enabled()
+{
+   static bool s_bChecked = false;
+   static bool s_bEnabled = false;
+   if ( ! s_bChecked )
+   {
+      s_bChecked = true;
+      s_bEnabled = ( access(FILE_FORCE_SHOW_ANTENNA_VALUES, R_OK) != -1 );
+   }
+   return s_bEnabled;
+}
+
+//show two antennas -65/-70 dBm as "65 70" due to the screen real estate limitation
+void _osd_format_antenna_values(char* szOut, const int* piValues, int iCount)
+{
+   szOut[0] = 0;
+   for( int k=0; k<iCount; k++ )
+   {
+      char szTmp[16];
+      if ( k > 0 )
+         strcat(szOut, " ");
+      sprintf(szTmp, "%02d", abs(piValues[k]));
+      strcat(szOut, szTmp);
+   }
+}
+
+float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMaxRxQuality, int dbm, int iSNR, bool bShowBars, bool bShowNumbers, bool bUplink, bool bHorizontal, u32 uRadioLinkNumbersFlags, bool bDraw, bool bDatarateChanged, const int* piAntennaDBM = NULL, const int* piAntennaSNR = NULL, int iAntennaValidCount = 0)
 {
    if ( ! bShowNumbers )
    if ( ! bShowBars )
@@ -348,7 +375,9 @@ float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMa
       }
       else if ( uRadioLinkNumbersFlags & OSD_FLAG3_SHOW_RADIO_LINK_QUALITY_NUMBERS_DBM )
       {
-         if ( dbm < -120 )
+         if ( iAntennaValidCount > 1 )
+            _osd_format_antenna_values(szLine1, piAntennaDBM, iAntennaValidCount);
+         else if ( dbm < -120 )
             strcpy(szLine1, "--- dBm");
          else
             sprintf(szLine1, "%d dBm", dbm);
@@ -356,7 +385,9 @@ float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMa
       }
       else if ( uRadioLinkNumbersFlags & OSD_FLAG3_SHOW_RADIO_LINK_QUALITY_NUMBERS_SNR )
       {
-         if ( iSNR <= 0 )
+         if ( iAntennaValidCount > 1 )
+            _osd_format_antenna_values(szLine1, piAntennaSNR, iAntennaValidCount);
+         else if ( iSNR <= 0 )
             strcpy(szLine1, "SNR: ---");
          else
             sprintf(szLine1, "SNR: %d", iSNR);
@@ -372,7 +403,9 @@ float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMa
       if ( ! bAddedDBM )
       if ( uRadioLinkNumbersFlags & OSD_FLAG3_SHOW_RADIO_LINK_QUALITY_NUMBERS_DBM )
       {
-         if ( dbm < -120 )
+         if ( iAntennaValidCount > 1 )
+            _osd_format_antenna_values(szLine2, piAntennaDBM, iAntennaValidCount);
+         else if ( dbm < -120 )
             strcpy(szLine2, "--- dBm");
          else
             sprintf(szLine2, "%d dBm", dbm);
@@ -381,7 +414,9 @@ float _osd_show_radio_bars_info(float xPos, float yPos, u32 uLastRxTime, int iMa
       if ( ! bAddedSNR )
       if ( uRadioLinkNumbersFlags & OSD_FLAG3_SHOW_RADIO_LINK_QUALITY_NUMBERS_SNR )
       {
-         if ( iSNR <= 0 )
+         if ( iAntennaValidCount > 1 )
+            _osd_format_antenna_values(szLine2, piAntennaSNR, iAntennaValidCount);
+         else if ( iSNR <= 0 )
             strcpy(szLine2, "SNR: ---");
          else
             sprintf(szLine2, "SNR: %d", iSNR);
@@ -901,7 +936,23 @@ float _osd_show_radio_link_new(float xPos, float yPos, int iLocalRadioLinkId, in
                }
             }
 
-            float fSize = _osd_show_radio_bars_info(xPos, yPos+dySignalBars, uLastRxTime, nRxQuality, g_fOSDDbm[i], g_fOSDSNR[i], bShowBars, bShowNumbers, false, bHorizontal, uRadioLinkNumbersFlags, false, false);
+            // count valid antennas globally (per-packet count is unreliable)
+            int aAntennaDBM[MAX_RADIO_ANTENNAS];
+            int aAntennaSNR[MAX_RADIO_ANTENNAS];
+            int iAntennaValidCount = 0;
+            if ( _osd_show_antenna_values_enabled() )
+            for( int k=0; k<MAX_RADIO_ANTENNAS; k++ )
+            {
+               int iAntDBM = g_SM_RadioStats.radio_interfaces[i].signalInfo.iAntennaDBM[k];
+               if ( iAntDBM < 500 )
+               {
+                  aAntennaDBM[iAntennaValidCount] = iAntDBM;
+                  aAntennaSNR[iAntennaValidCount] = iAntDBM - g_SM_RadioStats.radio_interfaces[i].signalInfo.iAntennaDBMNoise[k];
+                  iAntennaValidCount++;
+               }
+            }
+
+            float fSize = _osd_show_radio_bars_info(xPos, yPos+dySignalBars, uLastRxTime, nRxQuality, g_fOSDDbm[i], g_fOSDSNR[i], bShowBars, bShowNumbers, false, bHorizontal, uRadioLinkNumbersFlags, false, false, aAntennaDBM, aAntennaSNR, iAntennaValidCount);
             if ( bHorizontal )
             {
                xPos -= fSize;
@@ -918,7 +969,7 @@ float _osd_show_radio_link_new(float xPos, float yPos, int iLocalRadioLinkId, in
                iSNR = g_fOSDSNR[i];
             }
             if ( bRender )
-               _osd_show_radio_bars_info(xPos, yPos+dySignalBars, uLastRxTime, nRxQuality, iDBM, iSNR, bShowBars, bShowNumbers, false, bHorizontal, uRadioLinkNumbersFlags, true, true);
+               _osd_show_radio_bars_info(xPos, yPos+dySignalBars, uLastRxTime, nRxQuality, iDBM, iSNR, bShowBars, bShowNumbers, false, bHorizontal, uRadioLinkNumbersFlags, true, true, aAntennaDBM, aAntennaSNR, iAntennaValidCount);
             
             if ( bIsTxCard && (1<iCountInterfacesForCurrentLink) )
             if ( bRender )

@@ -125,6 +125,7 @@
 #define FILE_FORCE_ROUTER "/boot/forcerouter"
 #define FILE_FORCE_RESET "/boot/forcereset"
 #define FILE_BOOT_LOG_STEPS "/boot/bootstepslog.txt"
+#define FILE_FORCE_SHOW_ANTENNA_VALUES "/boot/showantennavalues"
 
 //#define VIDEO_RECORDER_COMMAND "raspivid"
 //#define VIDEO_RECORDER_COMMAND_VEYE "/usr/local/bin/veye_raspivid"
@@ -173,6 +174,7 @@
 #define FILE_FORCE_ROUTER "/config/forcerouter"
 #define FILE_FORCE_RESET "/config/forcereset"
 #define FILE_BOOT_LOG_STEPS "/config/bootstepslog.txt"
+#define FILE_FORCE_SHOW_ANTENNA_VALUES "/config/showantennavalues"
 
 #define VIDEO_PLAYER_PIPE "ruby_player_radxa"
 #define VIDEO_PLAYER_SM "ruby_player_radxa"

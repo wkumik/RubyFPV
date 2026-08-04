@@ -1030,6 +1030,8 @@ int radio_stats_update_on_new_radio_packet_received(shared_mem_radio_stats* pSMR
 
    if ( pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.nAntennaCount > pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.iAntennaCount )
       pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.iAntennaCount = pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.nAntennaCount;
+   memcpy((u8*)&(pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.iAntennaDBM), (u8*)&(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBM), sizeof(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBM));
+   memcpy((u8*)&(pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.iAntennaDBMNoise), (u8*)&(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBMNoise), sizeof(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBMNoise));
 
    memcpy((u8*)&(pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.signalInfoAll), (u8*)&(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.signalInfoAll), sizeof(type_runtime_radio_rx_signal_info));
    memcpy((u8*)&(pSMRS->radio_interfaces[iInterfaceIndex].signalInfo.signalInfoVideo), (u8*)&(pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.signalInfoVideo), sizeof(type_runtime_radio_rx_signal_info));

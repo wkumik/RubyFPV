@@ -181,6 +181,32 @@ void osd_render_stats_full_rx_port()
       g_pRenderEngine->drawTextLeft(xPos + widthCol - 2.0*padding, y, fontId, szBuff);
       y += lineHeight;
 
+      // count antenna the reliable way
+      int iValidAntennas = 0;
+      int iHighestValidAntenna = -1;
+      for( int k=0; k<MAX_RADIO_ANTENNAS; k++ )
+         if ( g_SM_RadioStats.radio_interfaces[i].signalInfo.iAntennaDBM[k] < 500 )
+         {
+            iValidAntennas++;
+            iHighestValidAntenna = k;
+         }
+
+      if ( iValidAntennas > 1 )
+      {
+         g_pRenderEngine->drawText(xPos, y, fontId, "Rx Dbm/Antenna:");
+         szBuff[0] = 0;
+         for( int k=0; k<=iHighestValidAntenna; k++ )
+         {
+            if ( g_SM_RadioStats.radio_interfaces[i].signalInfo.iAntennaDBM[k] < 500 )
+               sprintf(szBuff2, "%d%s ", g_SM_RadioStats.radio_interfaces[i].signalInfo.iAntennaDBM[k], (k<iHighestValidAntenna)?",":"");
+            else
+               sprintf(szBuff2, "N/A%s ", (k<iHighestValidAntenna)?",":"");
+            strcat(szBuff, szBuff2);
+         }
+         g_pRenderEngine->drawTextLeft(xPos + widthCol - 2.0*padding, y, fontId, szBuff);
+         y += lineHeight;
+      }
+
       if ( iRadioLinkId >= 0 )
       {
          sprintf(szBuff, "TX Time/Sec (link %d):", iRadioLinkId+1);
