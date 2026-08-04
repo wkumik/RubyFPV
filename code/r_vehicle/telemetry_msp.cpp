@@ -485,6 +485,11 @@ u32 telemetry_msp_get_fc_type_flag()
    return s_PHTMSP.uMSPFlags & MSP_FLAGS_FC_TYPE_MASK;
 }
 
+const t_packet_header_telemetry_msp* telemetry_msp_get_header()
+{
+   return &s_PHTMSP;
+}
+
 bool telemetry_msp_on_new_serial_data(u8* pData, int iDataLength)
 {
    if ( (NULL == pData) || (iDataLength <= 0) )
