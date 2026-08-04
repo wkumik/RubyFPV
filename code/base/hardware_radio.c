@@ -80,6 +80,11 @@ void reset_runtime_radio_rx_info(type_runtime_radio_rx_info* pRuntimeRadioRxInfo
    pRuntimeRadioRxInfo->nDataRateBPSMCS = 0; // positive: bps, negative: mcs rate, 0: never
    pRuntimeRadioRxInfo->nRadiotapFlags = 0;
    pRuntimeRadioRxInfo->nAntennaCount = 1;
+   for( int i=0; i<MAX_RADIO_ANTENNAS; i++ )
+   {
+      pRuntimeRadioRxInfo->iAntennaDBM[i] = 1000;
+      pRuntimeRadioRxInfo->iAntennaDBMNoise[i] = 1000;
+   }
    reset_runtime_radio_rx_signal_info(&(pRuntimeRadioRxInfo->signalInfoAll));
    reset_runtime_radio_rx_signal_info(&(pRuntimeRadioRxInfo->signalInfoVideo));
    reset_runtime_radio_rx_signal_info(&(pRuntimeRadioRxInfo->signalInfoData));

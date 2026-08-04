@@ -1251,6 +1251,13 @@ u8* radio_process_wlan_data_in(int interfaceNumber, int* piOutPacketLength, int*
    }
    if ( iAntennaCount > pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.nAntennaCount )
       pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.nAntennaCount = iAntennaCount;
+   for( int i=0; i<iAntennaCount && i<MAX_RADIO_ANTENNAS; i++ )
+   {
+      if ( iAntennaDBM[i] < 500 )
+         pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBM[i] = iAntennaDBM[i];
+      if ( iAntennaDBMNoise[i] < 500 )
+         pRadioHWInfo->runtimeInterfaceInfoRx.radioHwRxInfo.iAntennaDBMNoise[i] = iAntennaDBMNoise[i];
+   }
 
 
    #ifdef FEATURE_RADIO_SYNCHRONIZE_RXTX_THREADS
