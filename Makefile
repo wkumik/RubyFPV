@@ -307,10 +307,13 @@ ruby_player_radxa:code/r_player/ruby_player_radxa.o code/r_player/mpp_core.o $(F
 	$(CXX) $(_CPPFLAGS) $(CFLAGS_RENDERER) -o $@ $^ $(_LDFLAGS) $(LDFLAGS_RENDERER) $(LDFLAGS_CENTRAL) $(LDFLAGS_CENTRAL2) -ldl -lc -lrockchip_mpp
 
 ifeq ($(RUBY_BUILD_ENV),radxa)
-tests: test_port_rx test_port_tx test_link
+tests: test_port_rx test_port_tx test_link test_fec
 else
-tests: test_gpio test_port_rx test_port_tx test_link
+tests: test_gpio test_port_rx test_port_tx test_link test_fec
 endif
+
+test_fec:$(FOLDER_TESTS)/test_fec.o $(FOLDER_RADIO)/fec.o
+	$(CC) $(_CFLAGS) -o $@ $^
 
 test_cairo:$(FOLDER_TESTS)/test_cairo.o $(MODULE_BASE) $(MODULE_BASE2) $(MODULE_COMMON) $(MODULE_RADIO) $(MODULE_MODELS)
 	$(CXX) $(_CPPFLAGS) -o $@ $^ $(_LDFLAGS) -ldl -lc

@@ -36,6 +36,7 @@
 #include <sys/resource.h>
 #include <semaphore.h>
 #include <pthread.h>
+#include <poll.h>
 #include <signal.h>
 #include <errno.h>
 #include <string.h>
@@ -151,6 +152,177 @@ u32 s_uOutputBitrateToLocalVideoPlayerUDP = 0;
 
 char s_szOutputVideoStreamerFilename[MAX_FILE_PATH_SIZE];
 int  s_iPIDVideoStreamer = -1;
+
+// A write() on the streamer FIFO blocks if the video player stalls, and doing it
+// on the router loop delays retransmissions and radio packets processing.
+// So the writes are done on a dedicated thread, fed through a ring buffer.
+// If the player stalls long enough to fill the ring, incoming data is dropped
+// (reported to the caller as a truncated write, same as before).
+#define VIDEO_OUT_PIPE_RING_SIZE 512000
+// POLLOUT on a pipe guarantees PIPE_BUF (4096) bytes can be written without blocking
+#define VIDEO_OUT_PIPE_MAX_WRITE_SIZE 4096
+
+pthread_t s_ThreadVideoOutPipeWriter;
+bool s_bVideoOutPipeWriterThreadRunning = false;
+volatile bool s_bVideoOutPipeWriterMustStop = false;
+pthread_mutex_t s_MutexVideoOutPipeWriter = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t s_CondVideoOutPipeWriter = PTHREAD_COND_INITIALIZER;
+u8* s_pVideoOutPipeRing = NULL;
+int s_iVideoOutPipeRingReadPos = 0;
+int s_iVideoOutPipeRingWritePos = 0;
+int s_iVideoOutPipeRingBytes = 0;
+volatile int s_iVideoOutPipeWriterLastError = 0;
+
+static void * _thread_rx_video_output_pipe_writer(void *argument)
+{
+   log_line("[VideoOutput] Started pipe writer thread.");
+   while ( ! s_bVideoOutPipeWriterMustStop )
+   {
+      pthread_mutex_lock(&s_MutexVideoOutPipeWriter);
+      while ( (0 == s_iVideoOutPipeRingBytes) && (! s_bVideoOutPipeWriterMustStop) )
+         pthread_cond_wait(&s_CondVideoOutPipeWriter, &s_MutexVideoOutPipeWriter);
+      int iReadPos = s_iVideoOutPipeRingReadPos;
+      int iChunk = s_iVideoOutPipeRingBytes;
+      pthread_mutex_unlock(&s_MutexVideoOutPipeWriter);
+
+      if ( s_bVideoOutPipeWriterMustStop )
+         break;
+
+      if ( iChunk > VIDEO_OUT_PIPE_RING_SIZE - iReadPos )
+         iChunk = VIDEO_OUT_PIPE_RING_SIZE - iReadPos;
+      if ( iChunk > VIDEO_OUT_PIPE_MAX_WRITE_SIZE )
+         iChunk = VIDEO_OUT_PIPE_MAX_WRITE_SIZE;
+
+      int fd = s_fPipeVideoOutToStreamer;
+      if ( fd < 0 )
+      {
+         hardware_sleep_ms(5);
+         continue;
+      }
+
+      // Poll with a short timeout (instead of a plain blocking write) so the
+      // thread can be stopped promptly even if the player never reads
+      struct pollfd pfd;
+      pfd.fd = fd;
+      pfd.events = POLLOUT;
+      pfd.revents = 0;
+      int iPollRes = poll(&pfd, 1, 50);
+      if ( s_bVideoOutPipeWriterMustStop )
+         break;
+      if ( 0 == iPollRes )
+         continue;
+      int iRes = -1;
+      if ( (iPollRes > 0) && (pfd.revents & POLLOUT) )
+         iRes = write(fd, &s_pVideoOutPipeRing[iReadPos], iChunk);
+      else if ( iPollRes < 0 )
+      {
+         if ( EINTR == errno )
+            continue;
+      }
+      else
+         errno = EPIPE;
+
+      if ( iRes > 0 )
+      {
+         pthread_mutex_lock(&s_MutexVideoOutPipeWriter);
+         s_iVideoOutPipeRingReadPos = (s_iVideoOutPipeRingReadPos + iRes) % VIDEO_OUT_PIPE_RING_SIZE;
+         s_iVideoOutPipeRingBytes -= iRes;
+         pthread_mutex_unlock(&s_MutexVideoOutPipeWriter);
+         continue;
+      }
+      if ( (iRes < 0) && ((EINTR == errno) || (EAGAIN == errno)) )
+         continue;
+
+      // Pipe is broken (player stopped or crashed). Report the error to the
+      // main thread (picked up on the next output call), drop the pending
+      // data and go easy until the pipe is reopened.
+      s_iVideoOutPipeWriterLastError = (errno != 0) ? errno : EPIPE;
+      pthread_mutex_lock(&s_MutexVideoOutPipeWriter);
+      s_iVideoOutPipeRingReadPos = s_iVideoOutPipeRingWritePos;
+      s_iVideoOutPipeRingBytes = 0;
+      pthread_mutex_unlock(&s_MutexVideoOutPipeWriter);
+      hardware_sleep_ms(10);
+   }
+   log_line("[VideoOutput] Stopped pipe writer thread.");
+   return NULL;
+}
+
+static void _rx_video_output_start_pipe_writer_thread()
+{
+   if ( s_bVideoOutPipeWriterThreadRunning )
+      return;
+
+   if ( NULL == s_pVideoOutPipeRing )
+   {
+      s_pVideoOutPipeRing = (u8*)malloc(VIDEO_OUT_PIPE_RING_SIZE);
+      if ( NULL == s_pVideoOutPipeRing )
+      {
+         log_softerror_and_alarm("[VideoOutput] Failed to allocate pipe writer ring buffer. Pipe writes will be done in place.");
+         return;
+      }
+   }
+   s_iVideoOutPipeRingReadPos = 0;
+   s_iVideoOutPipeRingWritePos = 0;
+   s_iVideoOutPipeRingBytes = 0;
+   s_iVideoOutPipeWriterLastError = 0;
+   s_bVideoOutPipeWriterMustStop = false;
+
+   if ( 0 != pthread_create(&s_ThreadVideoOutPipeWriter, NULL, &_thread_rx_video_output_pipe_writer, NULL) )
+   {
+      log_softerror_and_alarm("[VideoOutput] Failed to create pipe writer thread. Pipe writes will be done in place.");
+      return;
+   }
+   s_bVideoOutPipeWriterThreadRunning = true;
+}
+
+static void _rx_video_output_stop_pipe_writer_thread()
+{
+   if ( ! s_bVideoOutPipeWriterThreadRunning )
+      return;
+   pthread_mutex_lock(&s_MutexVideoOutPipeWriter);
+   s_bVideoOutPipeWriterMustStop = true;
+   pthread_cond_signal(&s_CondVideoOutPipeWriter);
+   pthread_mutex_unlock(&s_MutexVideoOutPipeWriter);
+   pthread_join(s_ThreadVideoOutPipeWriter, NULL);
+   s_bVideoOutPipeWriterThreadRunning = false;
+}
+
+// Queues data for the pipe writer thread.
+// Returns the count of bytes accepted (less than iLength if the ring is full,
+// which the caller reports as a truncated write) or -1 if the writer thread
+// hit an IO error since the last call (with errno set to that error).
+static int _rx_video_output_pipe_write_async(u8* pData, int iLength)
+{
+   if ( (! s_bVideoOutPipeWriterThreadRunning) || (NULL == s_pVideoOutPipeRing) )
+      return write(s_fPipeVideoOutToStreamer, pData, iLength);
+
+   int iErr = s_iVideoOutPipeWriterLastError;
+   if ( 0 != iErr )
+   {
+      s_iVideoOutPipeWriterLastError = 0;
+      errno = iErr;
+      return -1;
+   }
+
+   pthread_mutex_lock(&s_MutexVideoOutPipeWriter);
+   int iToCopy = VIDEO_OUT_PIPE_RING_SIZE - s_iVideoOutPipeRingBytes;
+   if ( iToCopy > iLength )
+      iToCopy = iLength;
+   int iCopied = 0;
+   while ( iCopied < iToCopy )
+   {
+      int iChunk = iToCopy - iCopied;
+      if ( iChunk > VIDEO_OUT_PIPE_RING_SIZE - s_iVideoOutPipeRingWritePos )
+         iChunk = VIDEO_OUT_PIPE_RING_SIZE - s_iVideoOutPipeRingWritePos;
+      memcpy(&s_pVideoOutPipeRing[s_iVideoOutPipeRingWritePos], pData + iCopied, iChunk);
+      s_iVideoOutPipeRingWritePos = (s_iVideoOutPipeRingWritePos + iChunk) % VIDEO_OUT_PIPE_RING_SIZE;
+      iCopied += iChunk;
+   }
+   s_iVideoOutPipeRingBytes += iCopied;
+   pthread_cond_signal(&s_CondVideoOutPipeWriter);
+   pthread_mutex_unlock(&s_MutexVideoOutPipeWriter);
+   return iCopied;
+}
 
 void rx_video_output_start_video_streamer()
 {
@@ -312,6 +484,7 @@ void rx_video_output_start_video_streamer()
 void rx_video_output_stop_video_streamer()
 {
    log_line("[VideoOutput] Stopping video streamer...");
+   _rx_video_output_stop_pipe_writer_thread();
    if ( -1 != s_fPipeVideoOutToStreamer )
    {
       log_line("[VideoOutput] Closed video output pipe to streamer.");
@@ -535,16 +708,15 @@ void _rx_video_output_open_pipe_to_streamer()
    {
       iRetries--;
       //s_fPipeVideoOutToStreamer = open(FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY, O_CREAT | O_WRONLY | O_NONBLOCK);
-      s_fPipeVideoOutToStreamer = open(FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY, O_CREAT | O_WRONLY);
-      if ( s_fPipeVideoOutToStreamer < 0 )
-      {
-         log_error_and_alarm("[VideoOutput] Failed to open video output pipe to streamer write endpoint: %s, error code (%d): [%s]",
-            FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY, errno, strerror(errno));
-         if ( iRetries == 0 )
-            return;
-         else
-            hardware_sleep_ms(10);
-      }
+      s_fPipeVideoOutToStreamer = open(FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY, O_CREAT | O_WRONLY, 0644);
+      if ( s_fPipeVideoOutToStreamer >= 0 )
+         break;
+      log_error_and_alarm("[VideoOutput] Failed to open video output pipe to streamer write endpoint: %s, error code (%d): [%s]",
+         FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY, errno, strerror(errno));
+      if ( iRetries == 0 )
+         return;
+      else
+         hardware_sleep_ms(10);
    }
    log_line("[VideoOutput] Opened video output pipe to streamer write endpoint: %s", FIFO_RUBY_STATION_VIDEO_STREAM_DISPLAY);
    log_line("[VideoOutput] Video output pipe to streamer flags: %s", str_get_pipe_flags(fcntl(s_fPipeVideoOutToStreamer, F_GETFL)));
@@ -558,6 +730,8 @@ void _rx_video_output_open_pipe_to_streamer()
    fcntl(s_fPipeVideoOutToStreamer, F_SETPIPE_SZ, 250000);
    log_line("[VideoOutput] Video streamer FIFO new size: %d bytes", fcntl(s_fPipeVideoOutToStreamer, F_GETPIPE_SZ));
    s_bDidSentAnyDataToVideoStreamerPipe = false;
+
+   _rx_video_output_start_pipe_writer_thread();
 }
 
 void rx_video_output_init()
@@ -756,6 +930,7 @@ void rx_video_output_uninit()
    s_VideoETHOutputInfo.s_bForwardIsETHForwardEnabled = false;
    s_VideoETHOutputInfo.s_bForwardETHPipeEnabled = false;
 
+   _rx_video_output_stop_pipe_writer_thread();
    if ( -1 != s_fPipeVideoOutToStreamer )
    {
       log_line("[VideoOutput] Closed video output pipe to streamer.");
@@ -769,6 +944,10 @@ void rx_video_output_uninit()
       free(s_pPipeVideoOutputBuffer);
    s_pPipeVideoOutputBuffer = NULL;
    s_iPipeVideoOutputPos = 0;
+
+   if ( NULL != s_pVideoOutPipeRing )
+      free(s_pVideoOutPipeRing);
+   s_pVideoOutPipeRing = NULL;
 
    if ( -1 != s_VideoUSBOutputInfo.socketUSBOutput )
       close(s_VideoUSBOutputInfo.socketUSBOutput);
@@ -828,6 +1007,7 @@ void rx_video_output_disable_streamer_output()
    log_line("[VideoOutput] Disable video output to streamer.");
    s_bEnableVideoStreamerOutput = false;
 
+   _rx_video_output_stop_pipe_writer_thread();
    if ( -1 != s_fPipeVideoOutToStreamer )
    {
       close( s_fPipeVideoOutToStreamer );
@@ -988,7 +1168,7 @@ void _rx_video_output_to_video_streamer_pipe(u8* pBuffer, int iLength, bool bWai
    if ( (NULL == s_pPipeVideoOutputBuffer) || (! bWaitFullFrame) )
    {
       g_pProcessStats->uInBlockingOperation = 1;
-      iRes = write(s_fPipeVideoOutToStreamer, pBuffer, iLength);
+      iRes = _rx_video_output_pipe_write_async(pBuffer, iLength);
       g_pProcessStats->uInBlockingOperation = 0;
    }
    else
@@ -1003,7 +1183,7 @@ void _rx_video_output_to_video_streamer_pipe(u8* pBuffer, int iLength, bool bWai
       {
          iExpectedWriteResult = s_iPipeVideoOutputPos;
          g_pProcessStats->uInBlockingOperation = 1;
-         iRes = write(s_fPipeVideoOutToStreamer, s_pPipeVideoOutputBuffer, s_iPipeVideoOutputPos);
+         iRes = _rx_video_output_pipe_write_async(s_pPipeVideoOutputBuffer, s_iPipeVideoOutputPos);
          g_pProcessStats->uInBlockingOperation = 0;
          s_iPipeVideoOutputPos = 0;
       }
