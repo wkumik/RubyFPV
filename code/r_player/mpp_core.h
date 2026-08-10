@@ -16,6 +16,11 @@
 
 extern shared_mem_process_stats* g_pSMProcessStats;
 
+// Max time (in ms) to keep retrying to feed a frame to the MPP decoder before
+// giving up and signaling a real decoder-stall alarm. Short transient hiccups
+// (a few ms) are normal decode backpressure and must NOT raise the alarm.
+#define MPP_DECODER_GIVEUP_MS 100
+
 int mpp_init(bool bUseH265Decoder, int iMPPBuffersSize, u32 uCPUAffinityMask, int iRawPriority);
 int mpp_uninit();
 void mpp_enable_vsync(bool bEnableVSync);

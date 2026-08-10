@@ -106,7 +106,7 @@ int mpp_feed_data_to_decoder(void* pData, int iLength)
         clock_gettime(RUBY_HW_CLOCK_ID, &spec);
         uint64_t tTimeNow = spec.tv_sec * 1000 + spec.tv_nsec / 1e6;
         iElapsedMs = (int)(tTimeNow - tTimeStart);
-        if ( iElapsedMs > 100 )
+        if ( iElapsedMs > MPP_DECODER_GIVEUP_MS )
         {
             log_softerror_and_alarm("[MPP] Failed to feed data to MPP decoder, stalled for %d ms, stall counter: %d", iElapsedMs, iStallCount);
             return iElapsedMs;
